@@ -163,8 +163,8 @@ private fun ColumnScope.PreviewPane(ui: ConvertUi, vm: MainViewModel) {
         Text(result.params.describe(info), style = MaterialTheme.typography.bodySmall)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             if (!result.preview) {
-                Button(onClick = vm::saveResult, enabled = ui.savedUri == null && !ui.running) {
-                    Text(if (ui.savedUri == null) "갤러리에 저장" else "저장됨")
+                Button(onClick = vm::saveResult, enabled = !ui.running && !ui.saving) {
+                    Text(if (ui.savedUri == null) "갤러리에 저장" else "다시 저장")
                 }
             }
             if (ui.mode == ConvertMode.AUTO) OutlinedButton(onClick = vm::tuneResult) { Text("수동으로 다듬기") }

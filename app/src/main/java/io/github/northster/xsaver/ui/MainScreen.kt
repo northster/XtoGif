@@ -311,7 +311,8 @@ private fun SaveBar(ui: MainUi, vm: MainViewModel) {
                 Spacer(Modifier.width(8.dp))
                 OutlinedButton(onClick = vm::cancelDownload) { Text("취소") }
             } else {
-                Button(onClick = vm::downloadSelected, enabled = ui.chosen.isNotEmpty()) { Text("갤러리에 저장") }
+                val again = ui.chosen.isNotEmpty() && ui.chosen.all { it.state == EntryState.SAVED }
+                Button(onClick = vm::downloadSelected, enabled = ui.chosen.isNotEmpty()) { Text(if (again) "다시 저장" else "갤러리에 저장") }
             }
         }
     }

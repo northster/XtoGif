@@ -110,6 +110,7 @@ data class ConvertUi(
     val attempts: List<String> = emptyList(),
     val result: GifResult? = null,
     val savedUri: Uri? = null,
+    val saving: Boolean = false,
     val message: String? = null,
 ) {
     val targetBytes: Long?
@@ -251,11 +252,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun downloadSelected() {
         if (downloadJob?.isActive == true) return
-        val todo = _main.value.chosen.filter { it.state != EntryState.SAVED }
-        if (todo.isEmpty()) {
-            _main.update { it.copy(message = if (it.chosen.isEmpty()) "선택한 항목이 없습니다" else "선택한 항목은 이미 저장했습니다") }
+        val chosen = _main.value.chosen
+        if (chosen.isEmpty()) {
+            _main.update { it.copy(message = "선택한 항목이 없습니다") }
             return
         }
+        // the ones not saved yet; when all of them are, saving again makes new copies
+        val todo = chosen.filter { it.state != EntryState.SAVED }.ifEmpty { chosen }
         downloadJob = viewModelScope.launch {
             _main.update { it.copy(downloading = true) }
             var ok = 0
@@ -514,13 +517,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun saveResult() {
         val r = _convert.value.result ?: return
-        if (r.preview) return
+        if (r.preview || _convert.value.saving) return
         viewModelScope.launch {
+            _convert.update { it.copy(saving = true) }
             try {
                 val uri = Gallery.saveFile(getApplication(), r.file, "${_convert.value.baseName}.gif", "image/gif")
                 _convert.update { it.copy(savedUri = uri, message = "갤러리 › ${Gallery.ALBUM}에 저장했습니다 (${Bytes.format(r.bytes)})") }
             } catch (e: Exception) {
                 _convert.update { it.copy(message = "저장 실패: ${e.message}") }
+            } finally {
+                _convert.update { it.copy(saving = false) }
             }
         }
     }
