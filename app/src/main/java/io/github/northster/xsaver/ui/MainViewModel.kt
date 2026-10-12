@@ -15,7 +15,9 @@ import io.github.northster.xsaver.core.TweetRef
 import io.github.northster.xsaver.core.gif.AutoSizer
 import io.github.northster.xsaver.core.gif.Dither
 import io.github.northster.xsaver.core.gif.GifParams
+import io.github.northster.xsaver.core.gif.GifLadder
 import io.github.northster.xsaver.core.gif.GifSizeModel
+import io.github.northster.xsaver.core.gif.Knob
 import io.github.northster.xsaver.core.gif.SourceInfo
 import io.github.northster.xsaver.data.Gallery
 import io.github.northster.xsaver.data.Http
@@ -100,6 +102,8 @@ data class ConvertUi(
     val start: Float = 0f,
     val end: Float = 0f,
     val mode: ConvertMode = ConvertMode.AUTO,
+    /** The resolution, frame rate or colour slider moved by hand last: it stays, the other two follow the target. */
+    val lock: Knob? = null,
     val allowTrim: Boolean = false,
     val dither: Dither = Dither.BAYER,
     val width: Int = 480,
@@ -492,8 +496,38 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** What the automatic mode would pick under [target] with the size constant [k], and whether it fits. */
+    private fun lockValue(s: ConvertUi): Int = when (s.lock) {
+        Knob.WIDTH -> s.width
+        Knob.FPS -> s.fps
+        Knob.COLORS -> s.colors
+        null -> 0
+    }
+
+    private fun ladderFor(info: SourceInfo, s: ConvertUi, lock: Knob? = s.lock, allowTrim: Boolean = s.allowTrim) =
+        GifLadder(info, s.dither, s.start.toDouble(), s.duration, settings.maxGifWidth, 30, allowTrim, lock, lockValue(s))
+
+    /** Values the three sliders offer (best first), for the current source. */
+    fun knobValues(): Map<Knob, List<Int>>? {
+        val s = _convert.value
+        val info = s.info ?: return null
+        val l = ladderFor(info, s, lock = null, allowTrim = false)
+        return mapOf(Knob.WIDTH to l.widths, Knob.FPS to l.fpsValues, Knob.COLORS to l.colorValues)
+    }
+
+    /** A slider moved by hand: that setting stays, the other two are picked again for the target. */
+    fun setKnob(knob: Knob, value: Int) {
+        _convert.update {
+            when (knob) {
+                Knob.WIDTH -> it.copy(width = value, lock = knob, fresh = false)
+                Knob.FPS -> it.copy(fps = value, lock = knob, fresh = false)
+                Knob.COLORS -> it.copy(colors = value, lock = knob, fresh = false)
+            }
+        }
+        requestEstimate()
+    }
+
     private fun autoPick(info: SourceInfo, s: ConvertUi, target: Long, k: Double): Pair<GifParams, Boolean> {
-        val ladder = AutoSizer(info, target, s.dither, s.start.toDouble(), s.duration, s.allowTrim, maxWidth = settings.maxGifWidth).ladder
+        val ladder = ladderFor(info, s).steps
         val p = ladder.firstOrNull { GifSizeModel.predict(info, it, k) <= target * 0.97 }
         return (p ?: ladder.last()) to (p != null)
     }
@@ -514,8 +548,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** The best settings the automatic mode can use (top of its ladder): the "100%" GIF the size slider is relative to. */
-    private fun fullParams(info: SourceInfo, s: ConvertUi): GifParams =
-        AutoSizer(info, 1, s.dither, s.start.toDouble(), s.duration, false, maxWidth = settings.maxGifWidth).ladder.first()
+    private fun fullParams(info: SourceInfo, s: ConvertUi): GifParams = ladderFor(info, s, lock = null, allowTrim = false).steps.first()
 
     private fun applyEstimates(info: SourceInfo, s: ConvertUi, k: Double, measured: Boolean) {
         val full = fullParams(info, s)
@@ -527,6 +560,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _convert.update {
             it.copy(
                 estimate = main?.second, estimateLabel = main?.third, estimateMeasured = measured, estimateParams = main?.first,
+                // the sliders show the picked settings
+                width = main?.first?.width ?: it.width, fps = main?.first?.fps ?: it.fps, colors = main?.first?.colors ?: it.colors,
                 fullBytes = fullBytes, fullLabel = full.describe(info),
                 targetMb = if (it.targetTouched) it.targetMb else st.targetMb,
             )
@@ -648,6 +683,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 val sizer = AutoSizer(
                     src = info, targetBytes = target, dither = s.dither, startSec = s.start.toDouble(), durationSec = s.duration,
                     allowTrim = s.allowTrim, maxWidth = settings.maxGifWidth, initialK = calibratedK,
+                    lock = s.lock, lockValue = lockValue(s),
                 )
                 var n = 0
                 val outcome = sizer.run(
@@ -675,6 +711,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         running = false,
                         result = if (chosen != null && file != null) GifResult(file, chosen.bytes, chosen.params, false, fits) else null,
                         fresh = true,
+                        width = chosen?.params?.width ?: it.width, fps = chosen?.params?.fps ?: it.fps,
+                        colors = chosen?.params?.colors ?: it.colors,
                         message = if (fits) null else "가장 낮은 설정으로도 목표 용량을 넘습니다. " +
                             if (s.allowTrim) "구간을 더 짧게 잡아 보세요." else "세부 설정에서 '구간 자르기 허용'을 켜거나 구간을 줄여 보세요.",
                     )

@@ -1,7 +1,6 @@
 package io.github.northster.xsaver.core.gif
 
 import java.util.Locale
-import kotlin.math.ln
 import kotlin.math.log2
 import kotlin.math.pow
 import kotlin.math.roundToInt
@@ -49,19 +48,6 @@ object GifSizeModel {
     /** The k that would have predicted [actualBytes] for [p]. */
     fun calibrate(src: SourceInfo, p: GifParams, actualBytes: Long): Double =
         actualBytes / predict(src, p, 1.0).coerceAtLeast(1.0)
-
-    /**
-     * How good the result looks; resolution counts most. Halving 30→15 fps costs less than going 640→480 px wide,
-     * so frames are dropped first (to about 15), then resolution and colours go down together. Choppy (<15 fps) or tiny (<240 px)
-     * results are penalised extra.
-     */
-    fun quality(p: GifParams): Double {
-        var q = ln(p.width.toDouble()) + 0.35 * ln(p.fps.toDouble()) + 0.35 * ln(p.colors.toDouble())
-        if (p.fps < 15) q -= 0.5 * ln(15.0 / p.fps)
-        if (p.fps < 10) q -= 0.5 * ln(10.0 / p.fps)
-        if (p.width < 240) q -= 0.6 * ln(240.0 / p.width)
-        return q
-    }
 }
 
 object FfmpegArgs {

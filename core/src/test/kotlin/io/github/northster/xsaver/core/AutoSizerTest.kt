@@ -3,7 +3,9 @@ package io.github.northster.xsaver.core
 import io.github.northster.xsaver.core.gif.AutoSizer
 import io.github.northster.xsaver.core.gif.Dither
 import io.github.northster.xsaver.core.gif.GifParams
+import io.github.northster.xsaver.core.gif.GifLadder
 import io.github.northster.xsaver.core.gif.GifSizeModel
+import io.github.northster.xsaver.core.gif.Knob
 import io.github.northster.xsaver.core.gif.SourceInfo
 import kotlinx.coroutines.test.runTest
 import kotlin.math.pow
@@ -24,12 +26,23 @@ class AutoSizerTest {
     @Test fun ladderIsMonotone() {
         val l = AutoSizer(src, 5_000_000, Dither.BAYER, 0.0, 8.0, false).ladder
         assertTrue(l.size > 20)
-        for (i in 1 until l.size) {
-            assertTrue(GifSizeModel.quality(l[i]) <= GifSizeModel.quality(l[i - 1]))
-            assertTrue(GifSizeModel.predict(src, l[i]) < GifSizeModel.predict(src, l[i - 1]))
-        }
-        // the first step down from the top is not a smaller picture
-        assertTrue(l[0].width == 1080)
+        for (i in 1 until l.size) assertTrue(GifSizeModel.predict(src, l[i]) < GifSizeModel.predict(src, l[i - 1]))
+        // frames go first (never below 10), then colours, then resolution
+        assertTrue(l.all { it.fps >= 10 })
+        val firstColorDrop = l.indexOfFirst { it.colors < 256 }
+        val firstWidthDrop = l.indexOfFirst { it.width < 1080 }
+        assertTrue(l.take(firstColorDrop).last().fps == 10)
+        assertTrue(firstColorDrop < firstWidthDrop)
+        assertTrue(l[firstWidthDrop].colors == 64)
+    }
+
+    @Test fun lockedKnobStays() {
+        val l = GifLadder(src, Dither.BAYER, 0.0, 8.0, lock = Knob.WIDTH, lockValue = 640).steps
+        assertTrue(l.all { it.width == 640 })
+        assertTrue(l.last().fps == 10 && l.last().colors == 64)
+        val c = GifLadder(src, Dither.BAYER, 0.0, 8.0, lock = Knob.COLORS, lockValue = 32).steps
+        assertTrue(c.all { it.colors == 32 })
+        assertTrue(c.first().width == 1080 && c.last().width == 160)
     }
 
     @Test fun fitsAndIsNearBest() = runTest {
@@ -52,7 +65,7 @@ class AutoSizerTest {
         val sizer = AutoSizer(src, 300_000, Dither.BAYER, 0.0, 8.0, allowTrim = true)
         val out = assertIs<AutoSizer.Outcome.Fits>(sizer.run { fakeSize(it, 3.0) })
         assertTrue(out.attempt.params.durationSec < 8.0)
-        assertTrue(out.attempt.params.width >= 240)
+        assertTrue(out.attempt.params.width >= 240 && out.attempt.params.fps >= 10)
         println("trim -> ${out.attempt.params.describe(src)}")
         val noTrim = AutoSizer(src, 1_000, Dither.BAYER, 0.0, 8.0, allowTrim = false).run { fakeSize(it, 3.0) }
         assertIs<AutoSizer.Outcome.TooBig>(noTrim)

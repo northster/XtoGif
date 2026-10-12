@@ -9,14 +9,13 @@ import kotlin.math.roundToInt
  *
  * Idea from sticker-convert (github.com/laggykiller/sticker-convert, GPL-2.0): order the settings from best to
  * smallest and binary search that ladder with real encodes, keeping the best one under the limit. Two changes:
- * - The ladder is not one knob turned down evenly: every width × fps × colour combination is scored by
- *   [GifSizeModel.quality], and only those that are predicted smaller than every better one stay (a Pareto front).
- *   So it drops 30→15 fps before it shrinks the picture, and never picks a combination that is both worse and bigger.
+ * - The ladder is not one knob turned down evenly: [GifLadder] lowers the frame rate first (not below 15 fps), then
+ *   the colours, then the resolution, and can keep one of them fixed.
  * - The next try is where a size model, recalibrated after every encode, says the limit is; plain halving is
  *   the fallback when the model misses twice in a row. Starting from the size constant measured on a sample and
  *   stopping at a fit within 10% of the target, it usually takes 1–3 encodes instead of ~6.
- * With [allowTrim] the ladder stops at 240 px · 10 fps · 64 colours; if that is still too big, the clip is cut short
- * (kept from its start) instead of going lower.
+ * With [allowTrim] the ladder stops at 240 px; if that is still too big, the clip is cut short (kept from its start)
+ * instead of going lower.
  */
 class AutoSizer(
     private val src: SourceInfo,
@@ -32,6 +31,9 @@ class AutoSizer(
     private val initialK: Double = GifSizeModel.DEFAULT_K,
     /** A fit this close to the target ends the search: the next better step would gain little. */
     private val goodEnough: Double = 0.9,
+    /** A setting fixed by hand; the search only moves the other two. */
+    private val lock: Knob? = null,
+    private val lockValue: Int = 0,
 ) {
     data class Attempt(val params: GifParams, val bytes: Long, val fits: Boolean)
 
@@ -41,40 +43,8 @@ class AutoSizer(
         data class TooBig(val smallest: Attempt?, val attempts: List<Attempt>) : Outcome
     }
 
-    val ladder: List<GifParams> by lazy { buildLadder() }
-
-    private fun buildLadder(): List<GifParams> {
-        val wMax = min(src.width, maxWidth).coerceAtLeast(2)
-        val wMin = min(160, wMax)
-        val widths = generateSequence(wMax.toDouble()) { it * 0.9 }
-            .map { (it / 2).roundToInt() * 2 }
-            .takeWhile { it >= wMin }
-            .toMutableList()
-        if (widths.isEmpty() || widths.last() != wMin) widths.add(wMin)
-        val fpsTop = min(src.maxFps, maxFps)
-        val fpsList = (listOf(fpsTop) + listOf(30, 25, 24, 20, 15, 12, 10, 8, 6).filter { it < fpsTop }).distinct()
-        val colors = listOf(256, 192, 128, 96, 64, 48, 32)
-
-        // when the clip may be cut, cutting beats going below a watchable floor
-        val floorWidth = if (allowTrim) min(240, wMax) else 0
-        val floorFps = if (allowTrim) min(10, fpsTop) else 0
-        val floorColors = if (allowTrim) 64 else 0
-        val all = widths.distinct().filter { it >= floorWidth }.flatMap { w ->
-            fpsList.filter { it >= floorFps }.flatMap { f ->
-                colors.filter { it >= floorColors }.map { c -> GifParams(w, f, c, dither, startSec, durationSec) }
-            }
-        }.sortedByDescending { GifSizeModel.quality(it) }
-        // keep only combinations smaller than everything that looks better
-        val front = mutableListOf<GifParams>()
-        var smallest = Double.MAX_VALUE
-        for (p in all) {
-            val size = GifSizeModel.predict(src, p)
-            if (size < smallest) {
-                front.add(p)
-                smallest = size
-            }
-        }
-        return front
+    val ladder: List<GifParams> by lazy {
+        GifLadder(src, dither, startSec, durationSec, maxWidth, maxFps, allowTrim, lock, lockValue).steps
     }
 
     /** [encode] makes the GIF for the given settings and returns its size in bytes. */

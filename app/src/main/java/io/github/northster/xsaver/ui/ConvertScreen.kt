@@ -74,6 +74,13 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.material3.LocalMinimumInteractiveComponentSize
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.DpSize
+import io.github.northster.xsaver.core.gif.Knob
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.horizontalScroll
@@ -162,7 +169,18 @@ fun ConvertScreen(vm: MainViewModel) {
         Box(
             Modifier.fillMaxSize().padding(top = padding.calculateTopPadding(), bottom = peek).background(Color.Black),
             contentAlignment = Alignment.Center,
-        ) { Picture(ui) }
+        ) {
+            Picture(ui)
+            // the 100% GIF (source size, best settings), under the picture
+            ui.fullBytes?.let { full ->
+                Badge(
+                    "원본 크기 GIF (100%) ${if (ui.estimateMeasured) "≈" else "약"} ${Bytes.format(full)}" +
+                        (ui.fullLabel?.let { " · $it" } ?: "") +
+                        (ui.sliderMaxBytes?.let { max -> if (max < full) " · 슬라이더 최대 ${Bytes.format(max)}" else "" } ?: ""),
+                    Modifier.align(Alignment.BottomStart).padding(8.dp),
+                )
+            }
+        }
     }
 }
 
@@ -330,76 +348,63 @@ private fun SourcePlayer(ui: ConvertUi) {
     }
 }
 
-/** Always visible: target size, expected size, the main button. */
+/** Always visible: target size, resolution, frame rate and colours, the expected size and the main button. */
 @Composable
 private fun SimpleBar(ui: ConvertUi, vm: MainViewModel, modifier: Modifier) {
-    Column(modifier.padding(horizontal = 16.dp).padding(bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        // the 100% GIF (source size, best settings); the slider goes up to it or the maximum from the settings, in 5% steps
-        Text(
-            "원본 크기 GIF (100%) " + (ui.fullBytes?.let { "${if (ui.estimateMeasured) "≈" else "약"} ${Bytes.format(it)}" } ?: "계산 중…") +
-                (ui.fullLabel?.let { "  ·  $it" } ?: "") +
-                (ui.sliderMaxBytes?.let { max -> if (max < (ui.fullBytes ?: 0)) "  ·  슬라이더 최대 ${Bytes.format(max)}" else "" } ?: ""),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+    val knobs = remember(ui.info) { vm.knobValues() }
+    val enabled = !ui.running && ui.info != null
+    Column(modifier.padding(horizontal = 16.dp).padding(bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        // target: 5% steps of the slider's maximum
         val percent = ui.targetPercent
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Slider(
-                value = ((percent ?: 100f) / 5f).roundToInt().coerceIn(1, 20) * 5f,
-                onValueChange = { vm.setTargetPercent((it / 5f).roundToInt().coerceIn(1, 20) * 5) },
-                valueRange = 5f..100f,
-                steps = 18,
-                enabled = ui.fullBytes != null && !ui.running,
-                modifier = Modifier.weight(1f),
-            )
-            Text(
-                percent?.let { "${it.roundToInt()}%" } ?: "-",
-                style = MaterialTheme.typography.labelLarge,
-                modifier = Modifier.width(52.dp).padding(start = 8.dp),
-            )
-        }
-        // the settings this target means
+        KnobSlider(
+            label = "목표 용량",
+            index = (((percent ?: 50f) / 5f).roundToInt() - 1).coerceIn(0, 19),
+            count = 20,
+            valueText = percent?.let { "${it.roundToInt()}%" } ?: "-",
+            enabled = enabled && ui.fullBytes != null,
+            highlighted = false,
+        ) { i -> vm.setTargetPercent((i + 1) * 5) }
+        val est = ui.estimate
+        val target = ui.targetBytes
         Text(
-            ui.estimateLabel?.let { "→ $it" } ?: " ",
-            style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.primary,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
+            buildString {
+                append("목표 ${target?.let { Bytes.format(it) } ?: "-"}")
+                append(" · 예상 ")
+                append(if (est == null) "…" else "${if (ui.estimateMeasured) "≈" else "약"} ${Bytes.format(est)}")
+                if (est != null && target != null && est > target) append(" ✗")
+                if (ui.estimating) append(" · 확인 중")
+            },
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.End,
+            modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
         )
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            OutlinedTextField(
-                value = ui.targetMb,
-                onValueChange = { vm.setTarget(it.filter { c -> c.isDigit() || c == '.' || c == ',' }) },
-                label = { Text("목표 용량") },
-                suffix = { Text("MB") },
-                singleLine = true,
-                enabled = !ui.running,
-                isError = ui.targetBytes == null,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                modifier = Modifier.width(140.dp),
-            )
-            Column(Modifier.weight(1f)) {
-                val est = ui.estimate
-                val target = ui.targetBytes
-                Text(
-                    when {
-                        est == null -> if (ui.info == null) "예상 용량 -" else "예상 용량 계산 중…"
-                        else -> "예상 ${if (ui.estimateMeasured) "≈" else "약"} ${Bytes.format(est)}" +
-                            if (target != null && est > target) " ✗" else ""
+        // the three settings: moving one keeps it, the other two follow the target
+        if (knobs != null) {
+            val info = ui.info
+            for ((knob, label) in listOf(Knob.WIDTH to "해상도", Knob.FPS to "프레임", Knob.COLORS to "색상")) {
+                val values = knobs.getValue(knob).sorted() // small on the left
+                val current = when (knob) {
+                    Knob.WIDTH -> ui.width
+                    Knob.FPS -> ui.fps
+                    Knob.COLORS -> ui.colors
+                }
+                val index = values.indices.minByOrNull { kotlin.math.abs(values[it] - current) } ?: 0
+                KnobSlider(
+                    label = label,
+                    index = index,
+                    count = values.size,
+                    valueText = when (knob) {
+                        Knob.WIDTH -> if (info != null) "${current}×${(current.toDouble() * info.height / info.width).roundToInt()}" else "$current"
+                        Knob.FPS -> "${current}fps"
+                        Knob.COLORS -> "${current}색"
                     },
-                    fontWeight = FontWeight.Bold,
-                )
-                Text(
-                    if (ui.estimating) "샘플을 변환해 확인 중…" else if (ui.estimateMeasured) "샘플로 확인한 값" else "대략값",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                    enabled = enabled,
+                    highlighted = ui.lock == knob,
+                ) { i -> vm.setKnob(knob, values[i]) }
             }
         }
+        Spacer(Modifier.height(6.dp))
         if (ui.running || ui.saving) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Column(Modifier.weight(1f)) {
@@ -423,7 +428,7 @@ private fun SimpleBar(ui: ConvertUi, vm: MainViewModel, modifier: Modifier) {
             }
             Button(
                 onClick = vm::convertAndSave,
-                enabled = ready && (ui.mode == ConvertMode.MANUAL || ui.targetBytes != null),
+                enabled = ready && ui.targetBytes != null,
                 modifier = Modifier.fillMaxWidth().height(52.dp),
             ) { Text(label, style = MaterialTheme.typography.titleMedium) }
         }
@@ -437,8 +442,51 @@ private fun SimpleBar(ui: ConvertUi, vm: MainViewModel, modifier: Modifier) {
     }
 }
 
+/** A thin slider in one row: "label [slider] value". */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun KnobSlider(
+    label: String,
+    index: Int,
+    count: Int,
+    valueText: String,
+    enabled: Boolean,
+    highlighted: Boolean,
+    onIndex: (Int) -> Unit,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.height(34.dp)) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelLarge,
+            color = if (highlighted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.width(64.dp),
+        )
+        CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 30.dp) {
+            Slider(
+                value = index.toFloat().coerceIn(0f, (count - 1).coerceAtLeast(0).toFloat()),
+                onValueChange = { onIndex(it.roundToInt().coerceIn(0, count - 1)) },
+                modifier = Modifier.weight(1f).height(30.dp),
+                enabled = enabled && count > 1,
+                valueRange = 0f..(count - 1).coerceAtLeast(1).toFloat(),
+                steps = (count - 2).coerceAtLeast(0),
+                interactionSource = interaction,
+                thumb = { SliderDefaults.Thumb(interactionSource = interaction, enabled = enabled, thumbSize = DpSize(4.dp, 20.dp)) },
+                track = { st -> SliderDefaults.Track(sliderState = st, enabled = enabled, modifier = Modifier.height(6.dp)) },
+            )
+        }
+        Text(
+            valueText,
+            style = MaterialTheme.typography.labelLarge,
+            textAlign = TextAlign.End,
+            maxLines = 1,
+            modifier = Modifier.width(84.dp),
+        )
+    }
+}
+
 /** Shown when the sheet is dragged up. */
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun Details(ui: ConvertUi, vm: MainViewModel) {
     val info = ui.info ?: return
@@ -449,13 +497,6 @@ private fun Details(ui: ConvertUi, vm: MainViewModel) {
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         HorizontalDivider()
-        Text("자주 쓰는 용량", style = MaterialTheme.typography.labelLarge)
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            MainViewModel.presetsMb.forEach { mb ->
-                FilterChip(selected = ui.targetMb == mb, onClick = { vm.setTarget(mb) }, label = { Text("${mb}MB") }, enabled = enabled)
-            }
-        }
-
         Text("구간: ${formatSeconds(ui.start.toDouble())} ~ ${formatSeconds(ui.end.toDouble())} (${formatSeconds(ui.duration)})", style = MaterialTheme.typography.labelLarge)
         RangeSlider(
             value = ui.start..ui.end,
@@ -463,73 +504,25 @@ private fun Details(ui: ConvertUi, vm: MainViewModel) {
             valueRange = 0f..info.durationSec.toFloat(),
             enabled = enabled,
         )
-
-        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-            SegmentedButton(
-                selected = ui.mode == ConvertMode.AUTO, onClick = { vm.setMode(ConvertMode.AUTO) },
-                shape = SegmentedButtonDefaults.itemShape(0, 2), enabled = enabled,
-            ) { Text("자동") }
-            SegmentedButton(
-                selected = ui.mode == ConvertMode.MANUAL, onClick = { vm.setMode(ConvertMode.MANUAL) },
-                shape = SegmentedButtonDefaults.itemShape(1, 2), enabled = enabled,
-            ) { Text("수동") }
-        }
-
-        if (ui.mode == ConvertMode.AUTO) {
-            Text(
-                "목표 용량 안에서 가장 좋은 화질을 찾습니다. 프레임(30→15fps)을 먼저 줄이고, 그다음 해상도와 색상 수를 함께 낮춥니다. " +
-                    "실제로 변환해 보며 맞추므로 보통 2~5번 시도합니다.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("구간 자르기 허용")
-                    Text("240px · 10fps · 64색 아래로 내려가야 하면 대신 뒤를 자름", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                Switch(checked = ui.allowTrim, onCheckedChange = vm::setAllowTrim, enabled = enabled)
+        Text(
+            "목표 용량에 맞춰 프레임(최저 10fps) → 색상(최저 64색) → 해상도 순으로 줄입니다. 해상도·프레임·색상 중 하나를 직접 " +
+                "움직이면 그 값은 고정되고 나머지 둘이 맞춰집니다. 변환할 때 실제 용량을 재며 맞추므로 1~3번 시도할 수 있습니다.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("구간 자르기 허용")
+                Text("해상도가 240px 아래로 내려가야 하면 대신 뒤를 자름", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            if (ui.result != null && !ui.result.preview) {
-                OutlinedButton(onClick = vm::tuneResult, enabled = enabled) { Text("찾은 설정을 수동으로 다듬기") }
-            }
-        } else {
-            val maxW = minOf(info.width, 1920).coerceAtLeast(122)
-            Text("가로 해상도: ${ui.width}px (세로 ${(ui.width.toFloat() * info.height / info.width).roundToInt()}px)")
-            Slider(
-                value = ui.width.toFloat().coerceIn(120f, maxW.toFloat()),
-                onValueChange = { vm.setManual(width = it.roundToInt()) },
-                valueRange = 120f..maxW.toFloat(),
-                enabled = enabled,
-            )
-            val maxFps = info.maxFps.coerceAtLeast(3)
-            Text("프레임: ${ui.fps}fps")
-            Slider(
-                value = ui.fps.toFloat().coerceIn(2f, maxFps.toFloat()),
-                onValueChange = { vm.setManual(fps = it.roundToInt()) },
-                valueRange = 2f..maxFps.toFloat(),
-                steps = (maxFps - 3).coerceAtLeast(0),
-                enabled = enabled,
-            )
-            val steps = MainViewModel.colorSteps
-            val idx = steps.indexOfFirst { it >= ui.colors }.let { if (it < 0) steps.lastIndex else it }
-            Text("색상 수 (화질): ${ui.colors}색")
-            Slider(
-                value = idx.toFloat(),
-                onValueChange = { vm.setManual(colors = steps[it.roundToInt().coerceIn(0, steps.lastIndex)]) },
-                valueRange = 0f..steps.lastIndex.toFloat(),
-                steps = (steps.size - 2).coerceAtLeast(0),
-                enabled = enabled,
-            )
-            OutlinedButton(onClick = { vm.runManual(preview = true) }, enabled = enabled) { Text("미리보기 (앞 3초)") }
+            Switch(checked = ui.allowTrim, onCheckedChange = vm::setAllowTrim, enabled = enabled)
         }
-
         Text("디더링", style = MaterialTheme.typography.labelLarge)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Dither.entries.forEach { d ->
                 FilterChip(selected = ui.dither == d, onClick = { vm.setDither(d) }, label = { Text(d.label) }, enabled = enabled)
             }
         }
-
         ui.result?.let { r ->
             Text("결과: ${Bytes.format(r.bytes)} · ${r.params.describe(info)}", style = MaterialTheme.typography.bodySmall)
         }
