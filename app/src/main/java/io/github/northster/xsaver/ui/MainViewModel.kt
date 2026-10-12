@@ -108,6 +108,10 @@ data class ConvertUi(
      */
     val locks: List<Knob> = emptyList(),
     val targetLocked: Boolean = true,
+    /** An unlocked slider just moved by hand: kept while the others are fitted, until the target or a lock changes. */
+    val held: Knob? = null,
+    /** Expected size of the best settings the locks allow: the top of the target slider. */
+    val reachableBytes: Long? = null,
     val allowTrim: Boolean = false,
     val dither: Dither = Dither.BAYER,
     val width: Int = 480,
@@ -151,7 +155,8 @@ data class ConvertUi(
     /** Target locked: the size decides; unlocked: the sliders do. */
     val mode: ConvertMode get() = if (targetLocked) ConvertMode.AUTO else ConvertMode.MANUAL
     /** Top of the size slider: the 100% GIF, at most the maximum from the settings. */
-    val sliderMaxBytes: Long? get() = fullBytes?.takeIf { it > 0 }?.let { minOf(it, sliderCapBytes) }
+    val sliderMaxBytes: Long?
+        get() = fullBytes?.takeIf { it > 0 }?.let { minOf(it, sliderCapBytes, reachableBytes ?: Long.MAX_VALUE) }
     /** The target as a share of [sliderMaxBytes]. */
     val targetPercent: Float?
         get() {
@@ -502,7 +507,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** What the automatic mode would pick under [target] with the size constant [k], and whether it fits. */
-    private fun lockMap(s: ConvertUi): Map<Knob, Int> = s.locks.associateWith {
+    private fun lockMap(s: ConvertUi, withHeld: Boolean = true): Map<Knob, Int> =
+        (s.locks + listOfNotNull(s.held.takeIf { withHeld })).distinct().associateWith {
         when (it) {
             Knob.WIDTH -> s.width
             Knob.FPS -> s.fps
@@ -530,7 +536,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Tapping a slider's name. */
     fun toggleKnobLock(knob: Knob) {
-        _convert.update { if (knob in it.locks) it.copy(locks = it.locks - knob) else it.withLock(knob) }
+        _convert.update { (if (knob in it.locks) it.copy(locks = it.locks - knob) else it.withLock(knob)).copy(held = null) }
         requestEstimate()
     }
 
@@ -546,12 +552,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private fun lockTarget(s: ConvertUi, bytes: Long?): ConvertUi {
         val mb = bytes?.let { String.format(Locale.US, "%.2f", it / Bytes.MB.toDouble()) } ?: s.targetMb
         return s.copy(
-            targetLocked = true, targetTouched = true, targetMb = mb, fresh = false,
+            targetLocked = true, targetTouched = true, targetMb = mb, fresh = false, held = null,
             locks = if (s.locks.size >= 3) s.locks.dropLast(1) else s.locks,
         )
     }
 
-    /** A slider moved by hand: that setting gets locked, the unlocked ones follow. */
+    /** A slider moved by hand: that value is used, the other unlocked ones follow the target. */
     fun setKnob(knob: Knob, value: Int) {
         _convert.update {
             val moved = when (knob) {
@@ -559,7 +565,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 Knob.FPS -> it.copy(fps = value, fresh = false)
                 Knob.COLORS -> it.copy(colors = value, fresh = false)
             }
-            moved.withLock(knob)
+            // locking is only by tapping the name; an unlocked slider is held while the others are fitted
+            moved.copy(held = if (knob in it.locks) null else knob)
         }
         requestEstimate()
     }
@@ -591,16 +598,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private fun applyEstimates(info: SourceInfo, s: ConvertUi, k: Double, measured: Boolean) {
         val full = fullParams(info, s)
         val fullBytes = GifSizeModel.predict(info, full, k).toLong()
+        val reachable = GifSizeModel.predict(info, ladderFor(info, s, locks = lockMap(s, withHeld = false)).steps.first(), k).toLong()
         // until the target is set by hand it sits at the slider's default position, following the 100% size
-        val st = if (s.targetTouched) s.copy(fullBytes = fullBytes)
-        else s.copy(fullBytes = fullBytes).let { it.copy(targetMb = percentToMb(it, settings.sliderDefaultPercent) ?: it.targetMb) }
+        val st = if (s.targetTouched) s.copy(fullBytes = fullBytes, reachableBytes = reachable)
+        else s.copy(fullBytes = fullBytes, reachableBytes = reachable).let { it.copy(targetMb = percentToMb(it, settings.sliderDefaultPercent) ?: it.targetMb) }
         val main = estimateFor(info, st, k)
         _convert.update {
             it.copy(
                 estimate = main?.second, estimateLabel = main?.third, estimateMeasured = measured, estimateParams = main?.first,
                 // the sliders show the picked settings
                 width = main?.first?.width ?: it.width, fps = main?.first?.fps ?: it.fps, colors = main?.first?.colors ?: it.colors,
-                fullBytes = fullBytes, fullLabel = full.describe(info),
+                fullBytes = fullBytes, fullLabel = full.describe(info), reachableBytes = reachable,
                 targetMb = if (it.targetTouched) it.targetMb else st.targetMb,
             )
         }
