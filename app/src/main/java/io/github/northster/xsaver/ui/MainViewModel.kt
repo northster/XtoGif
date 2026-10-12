@@ -56,8 +56,10 @@ data class MediaEntry(
     val progress: Float = 0f,
     val savedUri: Uri? = null,
     val error: String? = null,
+    /** An X GIF (an mp4) that is converted to a real .gif when saved. */
+    val asGif: Boolean = false,
 ) {
-    val fileName get() = "$baseName.${item.extension}"
+    val fileName get() = if (asGif) "$baseName.gif" else "$baseName.${item.extension}"
     val canConvert get() = item.kind != MediaKind.PHOTO
 }
 
@@ -225,7 +227,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val author = p.author.ifBlank { if (quote) "unknown" else ref.user ?: "unknown" }
             val id = p.id.ifBlank { ref.id }
             return p.media.mapIndexed { i, m ->
-                MediaEntry(key = "${if (quote) "q" else "m"}$i", item = m, fromQuote = quote, baseName = FileNames.base(author, id, i + 1))
+                MediaEntry(
+                    key = "${if (quote) "q" else "m"}$i", item = m, fromQuote = quote, baseName = FileNames.base(author, id, i + 1),
+                    asGif = m.kind == MediaKind.GIF && settings.gifAsGif,
+                )
             }
         }
         return of(post, false) + (post.quote?.let { of(it, true) } ?: emptyList())
@@ -248,6 +253,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun selectAll(on: Boolean) = _main.update { s -> s.copy(entries = s.entries.map { it.copy(selected = on) }) }
 
+    fun setGifAsGif(on: Boolean) {
+        settings.gifAsGif = on
+        _main.update { s ->
+            s.copy(entries = s.entries.map { if (it.item.kind == MediaKind.GIF && it.state != EntryState.DOWNLOADING) it.copy(asGif = on) else it })
+        }
+    }
+
     fun setIncludeQuote(on: Boolean) = _main.update { it.copy(includeQuote = on) }
 
     fun downloadSelected() {
@@ -265,8 +277,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             for (e in todo) {
                 updateEntry(e.key) { it.copy(state = EntryState.DOWNLOADING, progress = 0f, error = null) }
                 try {
-                    val uri = Gallery.download(getApplication(), e.item.url, e.fileName, e.item.mimeType) { p ->
-                        updateEntry(e.key) { it.copy(progress = p) }
+                    val progress = { p: Float -> updateEntry(e.key) { it.copy(progress = p) } }
+                    val uri = when {
+                        e.asGif -> saveAsGif(e, progress)
+                        e.item.kind == MediaKind.PHOTO -> Gallery.download(getApplication(), e.item.url, e.fileName, e.item.mimeType, progress)
+                        else -> saveVideo(e, progress)
                     }
                     updateEntry(e.key) { it.copy(state = EntryState.SAVED, savedUri = uri, progress = 1f) }
                     ok++
@@ -287,6 +302,51 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * X GIF → real GIF at its own size (up to 720 px) and frame rate (up to 30), 256 colours, the dithering last used
+     * in the converter (bayer by default: about a third smaller than sierra for the same look). These clips are short,
+     * so quality comes first; the converter screen is there for size limits.
+     */
+    private suspend fun saveAsGif(e: MediaEntry, onProgress: (Float) -> Unit): Uri {
+        val dir = File(getApplication<Application>().cacheDir, "gifsave").apply { mkdirs() }
+        val src = File(dir, "${e.baseName}.mp4")
+        val out = File(dir, "${e.baseName}.gif")
+        try {
+            Gallery.downloadToFile(e.item.url, src) { onProgress(0.3f * it) }
+            val info = GifEngine.probe(src)
+            val width = min(info.width, 720).let { it - it % 2 }.coerceAtLeast(2)
+            val p = GifParams(width, min(info.maxFps, 30), 256, settings.dither, 0.0, info.durationSec)
+            GifEngine.encode(src, p, out) { onProgress(0.3f + 0.7f * it) }
+            return Gallery.saveFile(getApplication(), out, e.fileName, "image/gif")
+        } finally {
+            src.delete()
+            out.delete()
+        }
+    }
+
+    /** Videos and GIFs kept as mp4: downloaded, then re-packaged by FFmpeg so the gallery can play them. */
+    private suspend fun saveVideo(e: MediaEntry, onProgress: (Float) -> Unit): Uri {
+        val dir = File(getApplication<Application>().cacheDir, "videosave").apply { mkdirs() }
+        val src = File(dir, "${e.baseName}_x.mp4")
+        val out = File(dir, "${e.baseName}.mp4")
+        try {
+            Gallery.downloadToFile(e.item.url, src) { onProgress(0.9f * it) }
+            val file = try {
+                GifEngine.remux(src, out)
+                out
+            } catch (c: CancellationException) {
+                throw c
+            } catch (_: Exception) {
+                src // keep X's file rather than nothing
+            }
+            onProgress(1f)
+            return Gallery.saveFile(getApplication(), file, e.fileName, "video/mp4")
+        } finally {
+            src.delete()
+            out.delete()
+        }
+    }
+
     fun cancelDownload() {
         downloadJob?.cancel()
         _main.update { it.copy(downloading = false) }
@@ -298,10 +358,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun convertEntry(key: String) {
         val e = _main.value.entries.firstOrNull { it.key == key } ?: return
         val kind = if (e.item.kind == MediaKind.GIF) "GIF" else "영상"
+        // always X's original: what was saved may already be a converted GIF
         startConvert("$kind · ${e.baseName}", e.baseName) { file, progress ->
-            val saved = e.savedUri
-            if (saved != null) Gallery.copyToFile(getApplication(), saved, file)
-            else Gallery.downloadToFile(e.item.url, file, progress)
+            // re-packaged like saved videos, or the preview player can't open X's mp4 either
+            val raw = File(file.parentFile, "source_x.mp4")
+            Gallery.downloadToFile(e.item.url, raw, progress)
+            try {
+                GifEngine.remux(raw, file)
+                raw.delete()
+            } catch (c: CancellationException) {
+                throw c
+            } catch (_: Exception) {
+                raw.renameTo(file)
+            }
         }
     }
 

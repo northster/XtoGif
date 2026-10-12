@@ -47,6 +47,7 @@ fun SettingsScreen(vm: MainViewModel) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var includeQuote by remember { mutableStateOf(s.includeQuote) }
+    var gifAsGif by remember { mutableStateOf(s.gifAsGif) }
     var enabled by remember { mutableStateOf(Source.entries.associateWith { s.isEnabled(it) }) }
     var maxWidth by remember { mutableIntStateOf(s.maxGifWidth) }
     var ytdlp by remember { mutableStateOf("") }
@@ -69,6 +70,16 @@ fun SettingsScreen(vm: MainViewModel) {
                     Text("목록에서 게시물마다 켜고 끌 수 있음", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Switch(checked = includeQuote, onCheckedChange = { includeQuote = it; s.includeQuote = it })
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("X의 GIF를 진짜 GIF로 저장")
+                    Text(
+                        "X는 GIF를 MP4로 보관합니다. 켜면 원본 크기·프레임 그대로 .gif로 바꿔 저장, 끄면 X의 MP4 그대로(용량 작음)",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(checked = gifAsGif, onCheckedChange = { gifAsGif = it; vm.setGifAsGif(it) })
             }
             HorizontalDivider()
             Text("미디어 정보 가져오기 (위에서부터 차례로 시도)", fontWeight = FontWeight.Bold)

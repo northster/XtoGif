@@ -68,6 +68,21 @@ object GifEngine {
         return v.takeIf { it.isFinite() && it > 0 }
     }
 
+    /**
+     * Rewrites an mp4's container without touching the picture (-c copy). X's own muxer ("Twitter-vork", iso5 brand,
+     * 1/100 s time base) makes files that Samsung's gallery can neither play nor thumbnail; FFmpeg's muxer is the
+     * plain isom layout every player reads.
+     */
+    suspend fun remux(input: File, out: File) {
+        run(
+            listOf(
+                "-y", "-i", input.absolutePath, "-map", "0", "-c", "copy",
+                "-video_track_timescale", "90000", "-movflags", "+faststart", "-f", "mp4", out.absolutePath,
+            ),
+        ) { }
+        if (!out.exists() || out.length() == 0L) throw IOException("다시 포장한 영상이 비어 있습니다")
+    }
+
     /** Makes [out] and returns its size. [onProgress] goes 0..1 over both passes. */
     suspend fun encode(input: File, p: GifParams, out: File, onProgress: (Float) -> Unit = {}): Long {
         val palette = File(out.parentFile, out.nameWithoutExtension + "_palette.png")

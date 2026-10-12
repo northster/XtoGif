@@ -23,7 +23,7 @@ fun formatSeconds(sec: Double): String {
 fun kindLabel(kind: MediaKind) = when (kind) {
     MediaKind.PHOTO -> "사진"
     MediaKind.VIDEO -> "영상"
-    MediaKind.GIF -> "GIF (MP4)"
+    MediaKind.GIF -> "GIF"
 }
 
 @Composable

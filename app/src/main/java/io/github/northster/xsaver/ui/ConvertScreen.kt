@@ -190,6 +190,7 @@ private fun SourcePlayer(ui: ConvertUi) {
         factory = { ctx ->
             VideoView(ctx).apply {
                 setVideoPath(file.absolutePath)
+                setOnErrorListener { _, _, _ -> true } // no "can't play" dialog: the preview is optional
                 setOnPreparedListener { mp ->
                     mp.setVolume(0f, 0f)
                     mp.isLooping = true

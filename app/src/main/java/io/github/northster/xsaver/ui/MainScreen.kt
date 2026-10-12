@@ -285,11 +285,18 @@ private fun MediaCard(e: MediaEntry, onToggle: () -> Unit, onConvert: () -> Unit
                 e.sizeUnknown -> "용량 ?"
                 else -> "용량 확인 중…"
             }
-            Text(res + size, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(res + size + if (e.asGif) " (MP4 원본)" else "", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (e.item.kind == io.github.northster.xsaver.core.MediaKind.GIF) {
+                Text(
+                    if (e.asGif) "진짜 GIF로 바꿔 저장" else "X 원본 MP4로 저장",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
             e.error?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, maxLines = 2) }
             if (e.canConvert) {
                 TextButton(onClick = onConvert, contentPadding = PaddingValues(0.dp), modifier = Modifier.height(32.dp)) {
-                    Text("GIF로 변환")
+                    Text(if (e.asGif) "용량 맞춰 GIF 변환" else "GIF로 변환")
                 }
             }
         }

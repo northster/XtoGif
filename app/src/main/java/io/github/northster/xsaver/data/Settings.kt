@@ -17,6 +17,11 @@ class Settings(context: Context) {
         get() = prefs.getBoolean("include_quote", false)
         set(v) = prefs.edit().putBoolean("include_quote", v).apply()
 
+    /** X GIFs are mp4 files; true saves them as real .gif (converted), false keeps X's mp4. */
+    var gifAsGif: Boolean
+        get() = prefs.getBoolean("gif_as_gif", true)
+        set(v) = prefs.edit().putBoolean("gif_as_gif", v).apply()
+
     fun isEnabled(s: Source) = prefs.getBoolean("source_${s.name}", true)
     fun setEnabled(s: Source, on: Boolean) = prefs.edit().putBoolean("source_${s.name}", on).apply()
 
