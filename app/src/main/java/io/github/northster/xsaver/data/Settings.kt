@@ -17,7 +17,7 @@ class Settings(context: Context) {
         get() = prefs.getBoolean("include_quote", false)
         set(v) = prefs.edit().putBoolean("include_quote", v).apply()
 
-    /** X GIFs are mp4 files; true saves them as real .gif (converted), false keeps X's mp4. */
+    /** Posts with an X GIF (an mp4) open with the "GIF" switch on, so saving goes through the converter. */
     var gifAsGif: Boolean
         get() = prefs.getBoolean("gif_as_gif", true)
         set(v) = prefs.edit().putBoolean("gif_as_gif", v).apply()

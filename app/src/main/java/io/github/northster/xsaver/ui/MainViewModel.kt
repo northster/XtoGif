@@ -56,10 +56,8 @@ data class MediaEntry(
     val progress: Float = 0f,
     val savedUri: Uri? = null,
     val error: String? = null,
-    /** An X GIF (an mp4) that is converted to a real .gif when saved. */
-    val asGif: Boolean = false,
 ) {
-    val fileName get() = if (asGif) "$baseName.gif" else "$baseName.${item.extension}"
+    val fileName get() = "$baseName.${item.extension}"
     val canConvert get() = item.kind != MediaKind.PHOTO
 }
 
@@ -75,9 +73,12 @@ data class MainUi(
     val includeQuote: Boolean = false,
     val entries: List<MediaEntry> = emptyList(),
     val downloading: Boolean = false,
+    /** The "GIF" switch next to the save button: videos and GIFs go through the converter instead of being saved as mp4. */
+    val gifMode: Boolean = false,
     val message: String? = null,
 ) {
     val visible get() = entries.filter { !it.fromQuote || includeQuote }
+    val chosenMotion get() = chosen.filter { it.item.kind != MediaKind.PHOTO }
     val chosen get() = visible.filter { it.selected }
     val hasQuoteMedia get() = entries.any { it.fromQuote }
 }
@@ -113,6 +114,12 @@ data class ConvertUi(
     val result: GifResult? = null,
     val savedUri: Uri? = null,
     val saving: Boolean = false,
+    /** The result was made with the current settings, so the main button only needs to save it. */
+    val fresh: Boolean = false,
+    /** Settings the automatic mode is expected to pick, for the estimate line. */
+    val estimateLabel: String? = null,
+    val entryKey: String? = null,
+    val queueLeft: Int = 0,
     val message: String? = null,
 ) {
     val targetBytes: Long?
@@ -155,7 +162,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /** False when there is nothing to go back to (the activity then closes). */
     fun back(): Boolean {
-        if (_screen.value == Screen.CONVERT) stopConvertJobs()
+        if (_screen.value == Screen.CONVERT) {
+            stopConvertJobs()
+            convertQueue.clear()
+        }
         val prev = backStack.removeLastOrNull() ?: return false
         _screen.value = prev
         return true
@@ -209,6 +219,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                             loading = false, post = r.post, source = outcome.source, entries = entries,
                             // a post that only quotes another one: its media is what was meant
                             includeQuote = it.includeQuote || !mainHasMedia,
+                            gifMode = settings.gifAsGif && entries.any { e -> e.item.kind == MediaKind.GIF },
                             error = if (entries.isEmpty()) "이 게시물에는 사진, 영상, GIF가 없습니다" else null,
                         )
                     }
@@ -227,10 +238,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val author = p.author.ifBlank { if (quote) "unknown" else ref.user ?: "unknown" }
             val id = p.id.ifBlank { ref.id }
             return p.media.mapIndexed { i, m ->
-                MediaEntry(
-                    key = "${if (quote) "q" else "m"}$i", item = m, fromQuote = quote, baseName = FileNames.base(author, id, i + 1),
-                    asGif = m.kind == MediaKind.GIF && settings.gifAsGif,
-                )
+                MediaEntry(key = "${if (quote) "q" else "m"}$i", item = m, fromQuote = quote, baseName = FileNames.base(author, id, i + 1))
             }
         }
         return of(post, false) + (post.quote?.let { of(it, true) } ?: emptyList())
@@ -255,10 +263,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setGifAsGif(on: Boolean) {
         settings.gifAsGif = on
-        _main.update { s ->
-            s.copy(entries = s.entries.map { if (it.item.kind == MediaKind.GIF && it.state != EntryState.DOWNLOADING) it.copy(asGif = on) else it })
-        }
     }
+
+    fun setGifMode(on: Boolean) = _main.update { it.copy(gifMode = on) }
 
     fun setIncludeQuote(on: Boolean) = _main.update { it.copy(includeQuote = on) }
 
@@ -269,8 +276,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             _main.update { it.copy(message = "선택한 항목이 없습니다") }
             return
         }
+        // with the GIF switch on, videos and GIFs open the converter one after another; photos are saved meanwhile
+        val motion = if (_main.value.gifMode) chosen.filter { it.item.kind != MediaKind.PHOTO } else emptyList()
         // the ones not saved yet; when all of them are, saving again makes new copies
-        val todo = chosen.filter { it.state != EntryState.SAVED }.ifEmpty { chosen }
+        val todo = (chosen - motion.toSet()).let { rest -> rest.filter { it.state != EntryState.SAVED }.ifEmpty { rest } }
+        if (motion.isNotEmpty()) {
+            convertQueue.clear()
+            convertQueue.addAll(motion.drop(1).map { it.key })
+            convertEntry(motion.first().key)
+        }
+        if (todo.isEmpty()) return
         downloadJob = viewModelScope.launch {
             _main.update { it.copy(downloading = true) }
             var ok = 0
@@ -279,7 +294,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 try {
                     val progress = { p: Float -> updateEntry(e.key) { it.copy(progress = p) } }
                     val uri = when {
-                        e.asGif -> saveAsGif(e, progress)
                         e.item.kind == MediaKind.PHOTO -> Gallery.download(getApplication(), e.item.url, e.fileName, e.item.mimeType, progress)
                         else -> saveVideo(e, progress)
                     }
@@ -299,28 +313,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     message = "${ok}개 저장됨 (갤러리 › ${Gallery.ALBUM})" + if (failed > 0) ", ${failed}개 실패" else "",
                 )
             }
-        }
-    }
-
-    /**
-     * X GIF → real GIF at its own size (up to 720 px) and frame rate (up to 30), 256 colours, the dithering last used
-     * in the converter (bayer by default: about a third smaller than sierra for the same look). These clips are short,
-     * so quality comes first; the converter screen is there for size limits.
-     */
-    private suspend fun saveAsGif(e: MediaEntry, onProgress: (Float) -> Unit): Uri {
-        val dir = File(getApplication<Application>().cacheDir, "gifsave").apply { mkdirs() }
-        val src = File(dir, "${e.baseName}.mp4")
-        val out = File(dir, "${e.baseName}.gif")
-        try {
-            Gallery.downloadToFile(e.item.url, src) { onProgress(0.3f * it) }
-            val info = GifEngine.probe(src)
-            val width = min(info.width, 720).let { it - it % 2 }.coerceAtLeast(2)
-            val p = GifParams(width, min(info.maxFps, 30), 256, settings.dither, 0.0, info.durationSec)
-            GifEngine.encode(src, p, out) { onProgress(0.3f + 0.7f * it) }
-            return Gallery.saveFile(getApplication(), out, e.fileName, "image/gif")
-        } finally {
-            src.delete()
-            out.delete()
         }
     }
 
@@ -354,12 +346,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---- GIF conversion
 
-    /** A video or GIF from the list: the saved copy if there is one, else downloaded to the cache. */
-    fun convertEntry(key: String) {
+    /** Videos and GIFs still waiting for the converter after the current one. */
+    private val convertQueue = ArrayDeque<String>()
+
+    /** A video or GIF from the list, downloaded again from X (what was saved may already be a converted GIF). */
+    fun convertEntry(key: String, message: String? = null) {
         val e = _main.value.entries.firstOrNull { it.key == key } ?: return
         val kind = if (e.item.kind == MediaKind.GIF) "GIF" else "영상"
-        // always X's original: what was saved may already be a converted GIF
-        startConvert("$kind · ${e.baseName}", e.baseName) { file, progress ->
+        startConvert("$kind · ${e.baseName}", e.baseName, entryKey = key, message = message) { file, progress ->
             // re-packaged like saved videos, or the preview player can't open X's mp4 either
             val raw = File(file.parentFile, "source_x.mp4")
             Gallery.downloadToFile(e.item.url, raw, progress)
@@ -376,6 +370,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /** A video from the photo picker or shared from another app. */
     fun convertUri(uri: Uri) {
+        convertQueue.clear()
         backStack.clear()
         _screen.value = Screen.MAIN
         val name = Gallery.displayName(getApplication(), uri)
@@ -384,12 +379,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun startConvert(title: String, baseName: String, fetchSource: suspend (File, (Float) -> Unit) -> Unit) {
+    private fun startConvert(
+        title: String,
+        baseName: String,
+        entryKey: String? = null,
+        message: String? = null,
+        fetchSource: suspend (File, (Float) -> Unit) -> Unit,
+    ) {
         stopConvertJobs()
         calibratedK = GifSizeModel.DEFAULT_K
         _convert.value = ConvertUi(
             title = title, baseName = baseName, preparing = true, targetMb = settings.targetMb,
-            allowTrim = settings.allowTrim, dither = settings.dither,
+            allowTrim = settings.allowTrim, dither = settings.dither, entryKey = entryKey, queueLeft = convertQueue.size,
+            message = message,
         )
         navigate(Screen.CONVERT)
         prepareJob = viewModelScope.launch {
@@ -424,29 +426,30 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun dismissConvertMessage() = _convert.update { it.copy(message = null) }
 
     fun setTarget(mb: String) {
-        _convert.update { it.copy(targetMb = mb) }
+        _convert.update { it.copy(targetMb = mb, fresh = false) }
         if (_convert.value.targetBytes != null) settings.targetMb = mb
         requestEstimate()
     }
 
     fun setRange(start: Float, end: Float) {
-        _convert.update { it.copy(start = start, end = max(end, start + 0.1f)) }
+        _convert.update { it.copy(start = start, end = max(end, start + 0.1f), fresh = false) }
         requestEstimate()
     }
 
     fun setMode(mode: ConvertMode) {
-        _convert.update { it.copy(mode = mode) }
+        _convert.update { it.copy(mode = mode, fresh = false) }
         requestEstimate()
     }
 
     fun setAllowTrim(on: Boolean) {
         settings.allowTrim = on
-        _convert.update { it.copy(allowTrim = on) }
+        _convert.update { it.copy(allowTrim = on, fresh = false) }
+        requestEstimate()
     }
 
     fun setDither(d: Dither) {
         settings.dither = d
-        _convert.update { it.copy(dither = d) }
+        _convert.update { it.copy(dither = d, fresh = false) }
         requestEstimate()
     }
 
@@ -456,32 +459,59 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 width = width?.let { w -> w - w % 2 }?.coerceAtLeast(2) ?: it.width,
                 fps = fps ?: it.fps,
                 colors = colors ?: it.colors,
+                fresh = false,
             )
         }
         requestEstimate()
     }
 
+    /** What the automatic mode would pick under [target] with the size constant [k], and whether it fits. */
+    private fun autoPick(info: SourceInfo, s: ConvertUi, target: Long, k: Double): Pair<GifParams, Boolean> {
+        val ladder = AutoSizer(info, target, s.dither, s.start.toDouble(), s.duration, s.allowTrim, maxWidth = settings.maxGifWidth).ladder
+        val p = ladder.firstOrNull { GifSizeModel.predict(info, it, k) <= target * 0.97 }
+        return (p ?: ladder.last()) to (p != null)
+    }
+
+    private fun estimateFor(info: SourceInfo, s: ConvertUi, k: Double): Triple<GifParams, Long, String>? {
+        if (s.mode == ConvertMode.MANUAL) {
+            val p = s.manualParams()
+            return Triple(p, GifSizeModel.predict(info, p, k).toLong(), p.describe(info))
+        }
+        val target = s.targetBytes ?: return null
+        val (p, fits) = autoPick(info, s, target, k)
+        val label = p.describe(info) + when {
+            fits -> ""
+            s.allowTrim -> " · 넘치면 뒤를 잘라 맞춤"
+            else -> " · 목표 초과"
+        }
+        return Triple(p, GifSizeModel.predict(info, p, k).toLong(), label)
+    }
+
     /**
-     * Manual mode: an instant estimate from the size model, then a real one from encoding a short sample
-     * (up to 2 s from the middle of the range) once the sliders rest.
+     * The expected size: right away from the size model, then again after encoding a short sample (up to 2 s from the
+     * middle of the range, at the settings that would be used) once the controls rest.
      */
     private fun requestEstimate() {
         estimateJob?.cancel()
         val s = _convert.value
         val info = s.info ?: return
-        if (s.mode != ConvertMode.MANUAL || s.running || s.source == null) return
-        val params = s.manualParams()
-        _convert.update { it.copy(estimate = GifSizeModel.predict(info, params, calibratedK).toLong(), estimateMeasured = false) }
+        val source = s.source ?: return
+        if (s.running) return
+        val first = estimateFor(info, s, calibratedK)
+        _convert.update { it.copy(estimate = first?.second, estimateLabel = first?.third, estimateMeasured = false) }
+        first ?: return
         estimateJob = viewModelScope.launch {
             delay(600)
             _convert.update { it.copy(estimating = true) }
             try {
+                val params = first.first
                 val sampleLen = min(2.0, params.durationSec)
                 val sample = params.copy(startSec = params.startSec + (params.durationSec - sampleLen) / 2, durationSec = sampleLen)
-                val bytes = GifEngine.encode(s.source, sample, File(workDir, "sample.gif"))
+                val bytes = GifEngine.encode(source, sample, File(workDir, "sample.gif"))
                 calibratedK = GifSizeModel.calibrate(info, sample, bytes)
+                val now = estimateFor(info, _convert.value, calibratedK)
                 _convert.update {
-                    it.copy(estimate = GifSizeModel.predict(info, params, calibratedK).toLong(), estimateMeasured = true, estimating = false)
+                    it.copy(estimate = now?.second, estimateLabel = now?.third, estimateMeasured = true, estimating = false)
                 }
             } catch (c: CancellationException) {
                 _convert.update { it.copy(estimating = false) }
@@ -492,7 +522,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun runAuto() {
+    /** The main button: convert with the current settings and save, or only save when that result is already there. */
+    fun convertAndSave() {
+        val s = _convert.value
+        if (s.running || s.saving || s.preparing || s.info == null) return
+        val r = s.result
+        if (r != null && !r.preview && s.fresh) {
+            if (r.fits) saveResult() else _convert.update { it.copy(message = "목표 용량을 넘는 결과라 저장하지 않았습니다. 설정을 바꿔 다시 변환하세요") }
+            return
+        }
+        if (s.mode == ConvertMode.AUTO) runAuto(andSave = true) else runManual(preview = false, andSave = true)
+    }
+
+    fun runAuto(andSave: Boolean = false) {
         val s = _convert.value
         val info = s.info ?: return
         val src = s.source ?: return
@@ -531,10 +573,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     it.copy(
                         running = false,
                         result = if (chosen != null && file != null) GifResult(file, chosen.bytes, chosen.params, false, fits) else null,
+                        fresh = true,
                         message = if (fits) null else "가장 낮은 설정으로도 목표 용량을 넘습니다. " +
-                            if (s.allowTrim) "구간을 더 짧게 잡아 보세요." else "'구간 자르기 허용'을 켜거나 구간을 줄여 보세요.",
+                            if (s.allowTrim) "구간을 더 짧게 잡아 보세요." else "세부 설정에서 '구간 자르기 허용'을 켜거나 구간을 줄여 보세요.",
                     )
                 }
+                if (andSave && fits) saveResult()
             } catch (c: CancellationException) {
                 files.values.forEach { it.delete() }
                 _convert.update { it.copy(running = false, runLabel = "") }
@@ -546,7 +590,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Manual mode: the whole range ([preview] = false) or its first 3 seconds. */
-    fun runManual(preview: Boolean) {
+    fun runManual(preview: Boolean, andSave: Boolean = false) {
         val s = _convert.value
         val info = s.info ?: return
         val src = s.source ?: return
@@ -569,7 +613,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         result = GifResult(out, bytes, p, preview, target == null || bytes <= target),
                         estimate = if (preview) GifSizeModel.predict(info, full, calibratedK).toLong() else bytes,
                         estimateMeasured = true,
+                        fresh = !preview,
                     )
+                }
+                if (andSave && !preview) {
+                    if (target == null || bytes <= target) saveResult()
+                    else _convert.update { it.copy(message = "결과 ${Bytes.format(bytes)}가 목표 용량을 넘어 저장하지 않았습니다") }
                 }
             } catch (c: CancellationException) {
                 _convert.update { it.copy(running = false, runLabel = "") }
@@ -591,7 +640,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             _convert.update { it.copy(saving = true) }
             try {
                 val uri = Gallery.saveFile(getApplication(), r.file, "${_convert.value.baseName}.gif", "image/gif")
-                _convert.update { it.copy(savedUri = uri, message = "갤러리 › ${Gallery.ALBUM}에 저장했습니다 (${Bytes.format(r.bytes)})") }
+                val done = "GIF 저장됨 (${Bytes.format(r.bytes)}, 갤러리 › ${Gallery.ALBUM})"
+                _convert.value.entryKey?.let { key -> updateEntry(key) { it.copy(state = EntryState.SAVED, savedUri = uri, error = null) } }
+                val next = convertQueue.removeFirstOrNull()
+                if (next != null) {
+                    _convert.update { it.copy(saving = false) }
+                    convertEntry(next, message = "$done · 다음 영상")
+                    return@launch
+                }
+                _convert.update { it.copy(savedUri = uri, message = done) }
             } catch (e: Exception) {
                 _convert.update { it.copy(message = "저장 실패: ${e.message}") }
             } finally {

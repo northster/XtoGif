@@ -73,9 +73,9 @@ fun SettingsScreen(vm: MainViewModel) {
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("X의 GIF를 진짜 GIF로 저장")
+                    Text("GIF 게시물은 'GIF로'를 켠 채로 열기")
                     Text(
-                        "X는 GIF를 MP4로 보관합니다. 켜면 원본 크기·프레임 그대로 .gif로 바꿔 저장, 끄면 X의 MP4 그대로(용량 작음)",
+                        "X는 GIF를 MP4로 보관합니다. 켜 두면 GIF가 있는 게시물에서 저장 버튼 옆 'GIF로'가 처음부터 켜져 있어, 저장하면 GIF 변환 화면으로 갑니다",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }

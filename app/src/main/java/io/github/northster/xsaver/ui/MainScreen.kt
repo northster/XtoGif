@@ -58,7 +58,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -243,13 +246,13 @@ private fun MediaGrid(ui: MainUi, vm: MainViewModel, modifier: Modifier, minCell
     ) {
         header()
         items(ui.visible, key = { it.key }) { e ->
-            MediaCard(e, onToggle = { vm.toggle(e.key) }, onConvert = { vm.convertEntry(e.key) })
+            MediaCard(e, onToggle = { vm.toggle(e.key) })
         }
     }
 }
 
 @Composable
-private fun MediaCard(e: MediaEntry, onToggle: () -> Unit, onConvert: () -> Unit) {
+private fun MediaCard(e: MediaEntry, onToggle: () -> Unit) {
     Card(onClick = onToggle) {
         Box(Modifier.fillMaxWidth().aspectRatio(1f)) {
             AsyncImage(
@@ -285,20 +288,8 @@ private fun MediaCard(e: MediaEntry, onToggle: () -> Unit, onConvert: () -> Unit
                 e.sizeUnknown -> "용량 ?"
                 else -> "용량 확인 중…"
             }
-            Text(res + size + if (e.asGif) " (MP4 원본)" else "", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            if (e.item.kind == io.github.northster.xsaver.core.MediaKind.GIF) {
-                Text(
-                    if (e.asGif) "진짜 GIF로 바꿔 저장" else "X 원본 MP4로 저장",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-            }
+            Text(res + size, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             e.error?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, maxLines = 2) }
-            if (e.canConvert) {
-                TextButton(onClick = onConvert, contentPadding = PaddingValues(0.dp), modifier = Modifier.height(32.dp)) {
-                    Text(if (e.asGif) "용량 맞춰 GIF 변환" else "GIF로 변환")
-                }
-            }
         }
     }
 }
@@ -307,21 +298,43 @@ private fun MediaCard(e: MediaEntry, onToggle: () -> Unit, onConvert: () -> Unit
 private fun SaveBar(ui: MainUi, vm: MainViewModel) {
     Surface(tonalElevation = 3.dp) {
         Row(
-            Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 16.dp, vertical = 10.dp),
+            Modifier.fillMaxWidth().navigationBarsPadding().padding(start = 16.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             val known = ui.chosen.mapNotNull { it.size }
-            val total = if (known.isEmpty()) "" else " · " + Bytes.format(known.sum()) + if (known.size < ui.chosen.size) "+" else ""
-            Text("${ui.chosen.size}개 선택$total", modifier = Modifier.weight(1f))
+            val total = if (known.isEmpty()) "" else Bytes.format(known.sum()) + if (known.size < ui.chosen.size) "+" else ""
+            Column(Modifier.weight(1f)) {
+                Text("${ui.chosen.size}개 선택", style = MaterialTheme.typography.bodyMedium)
+                if (total.isNotEmpty()) Text(total, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             if (ui.downloading) {
                 CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                 Spacer(Modifier.width(8.dp))
                 OutlinedButton(onClick = vm::cancelDownload) { Text("취소") }
             } else {
+                // videos and GIFs: save as mp4, or (switch on) open the GIF converter for each of them
+                if (ui.chosenMotion.isNotEmpty()) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .clip(MaterialTheme.shapes.large)
+                            .toggleable(value = ui.gifMode, role = Role.Switch, onValueChange = vm::setGifMode)
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                    ) {
+                        Text("GIF로", style = MaterialTheme.typography.labelLarge)
+                        Spacer(Modifier.width(6.dp))
+                        Switch(checked = ui.gifMode, onCheckedChange = null)
+                    }
+                    Spacer(Modifier.width(8.dp))
+                }
                 val again = ui.chosen.isNotEmpty() && ui.chosen.all { it.state == EntryState.SAVED }
-                Button(onClick = vm::downloadSelected, enabled = ui.chosen.isNotEmpty()) { Text(if (again) "다시 저장" else "갤러리에 저장") }
+                val label = when {
+                    ui.gifMode && ui.chosenMotion.isNotEmpty() -> "GIF 변환"
+                    again -> "다시 저장"
+                    else -> "저장"
+                }
+                Button(onClick = vm::downloadSelected, enabled = ui.chosen.isNotEmpty()) { Text(label) }
             }
         }
     }
 }
-
