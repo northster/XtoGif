@@ -128,6 +128,9 @@ data class ConvertUi(
     /** One frame rendered with [stillParams], shown in place of the video before converting. */
     val still: File? = null,
     val stillParams: GifParams? = null,
+    /** The first seconds of the range as an animated GIF with [clipParams]: shown once ready, over the still. */
+    val clip: File? = null,
+    val clipParams: GifParams? = null,
     /** The target was typed or slid; before that it follows the slider's default position. */
     val targetTouched: Boolean = false,
     val entryKey: String? = null,
@@ -159,7 +162,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val screen: StateFlow<Screen> = _screen.asStateFlow()
     private val backStack = ArrayDeque<Screen>()
 
-    private val _main = MutableStateFlow(MainUi(includeQuote = settings.includeQuote))
+    private val _main = MutableStateFlow(MainUi(includeQuote = settings.includeQuote, gifMode = settings.gifAsGif))
     val main: StateFlow<MainUi> = _main.asStateFlow()
 
     private val _convert = MutableStateFlow(ConvertUi())
@@ -240,7 +243,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                             loading = false, post = r.post, source = outcome.source, entries = entries,
                             // a post that only quotes another one: its media is what was meant
                             includeQuote = it.includeQuote || !mainHasMedia,
-                            gifMode = settings.gifAsGif && entries.any { e -> e.item.kind == MediaKind.GIF },
+                            gifMode = settings.gifAsGif,
                             error = if (entries.isEmpty()) "이 게시물에는 사진, 영상, GIF가 없습니다" else null,
                         )
                     }
@@ -566,6 +569,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 applyEstimates(info, _convert.value, calibratedK, measured = true)
                 _convert.update { it.copy(estimating = false) }
                 renderStill(info, source)
+                renderClip(info, source)
             } catch (c: CancellationException) {
                 _convert.update { it.copy(estimating = false) }
                 throw c
@@ -586,6 +590,25 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             GifEngine.still(source, p, p.startSec + p.durationSec / 2, out)
             val old = _convert.value.still
             _convert.update { it.copy(still = out, stillParams = p) }
+            if (old != out) old?.delete()
+        } catch (c: CancellationException) {
+            out.delete()
+            throw c
+        } catch (_: Exception) {
+            out.delete()
+        }
+    }
+
+    /** The first 3 seconds of the range with the estimate's settings, animated: shows motion and frame rate too. */
+    private suspend fun renderClip(info: SourceInfo, source: File) {
+        val p = _convert.value.estimateParams ?: return
+        if (_convert.value.clipParams == p) return
+        val clipParams = p.copy(durationSec = min(3.0, p.durationSec))
+        val out = File(workDir, "clip_${++stillCounter}.gif")
+        try {
+            GifEngine.encode(source, clipParams, out)
+            val old = _convert.value.clip
+            _convert.update { it.copy(clip = out, clipParams = p) }
             if (old != out) old?.delete()
         } catch (c: CancellationException) {
             out.delete()

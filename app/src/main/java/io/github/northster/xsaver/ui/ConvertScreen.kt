@@ -193,7 +193,9 @@ private fun Picture(ui: ConvertUi) {
         else -> {
             // before converting: one frame with the settings in view (tap: the source video instead)
             var showVideo by remember { mutableStateOf(false) }
-            val still = ui.still
+            // the animated first 3 seconds once ready, the single frame until then
+            val still = ui.clip ?: ui.still
+            val shownParams = if (ui.clip != null) ui.clipParams else ui.stillParams
             val info = ui.info
             if (still != null && !showVideo) {
                 val context = LocalContext.current
@@ -209,7 +211,10 @@ private fun Picture(ui: ConvertUi) {
                     modifier = Modifier.fillMaxSize().clickable { showVideo = true },
                 )
                 Box(Modifier.fillMaxSize().padding(8.dp), contentAlignment = Alignment.TopStart) {
-                    Badge("미리보기 한 장 · ${ui.stillParams?.let { p -> info?.let { "${p.width}×${p.height(it)} · ${p.colors}색" } }.orEmpty()} · 누르면 원본 재생")
+                    val what = if (ui.clip != null) "미리보기 앞 3초" else "미리보기 한 장 (움직이는 미리보기 만드는 중…)"
+                    val params = shownParams?.let { p -> info?.let { "${p.width}×${p.height(it)} · ${p.fps}fps · ${p.colors}색" } }.orEmpty()
+                    val stale = shownParams != null && shownParams != ui.estimateParams
+                    Badge("$what · $params${if (stale) " · 새 설정 반영 중…" else ""} · 누르면 원본")
                 }
             } else {
                 Box(Modifier.fillMaxSize().clickable(enabled = still != null) { showVideo = false }) {
