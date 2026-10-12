@@ -1,17 +1,41 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- An X with a down arrow (download) -->
+<!-- XtoGIF: an X, an arrow down, and "GIF" (all inside the adaptive icon's 66 dp safe zone) -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+    <!-- X -->
     <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M36,32 L46,32 L72,68 L62,68 Z" />
+        android:pathData="M47,27 L61,43 M61,27 L47,43"
+        android:strokeWidth="5"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round" />
+    <!-- arrow -->
     <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M68,32 L72,32 L57,49 L55,46 Z M36,68 L40,68 L52,54 L50,51 Z" />
+        android:pathData="M49,49 L54,54 L59,49"
+        android:strokeWidth="3.5"
+        android:strokeColor="#FF1D9BF0"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <!-- G -->
     <path
-        android:fillColor="#FF1D9BF0"
-        android:pathData="M50,72 L58,72 L58,78 L64,78 L54,86 L44,78 L50,78 Z" />
+        android:pathData="M45,62 L36,62 L36,79 L45,79 L45,71 L40.5,71"
+        android:strokeWidth="4.5"
+        android:strokeColor="#FF1D9BF0"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <!-- I -->
+    <path
+        android:pathData="M54,62 L54,79"
+        android:strokeWidth="4.5"
+        android:strokeColor="#FF1D9BF0"
+        android:strokeLineCap="round" />
+    <!-- F -->
+    <path
+        android:pathData="M63,79 L63,62 L72,62 M63,70.5 L69.5,70.5"
+        android:strokeWidth="4.5"
+        android:strokeColor="#FF1D9BF0"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
 </vector>

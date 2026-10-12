@@ -95,7 +95,7 @@ fun MainScreen(vm: MainViewModel) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("X 저장") },
+                title = { Text("XtoGIF") },
                 actions = {
                     IconButton(onClick = { vm.navigate(Screen.SETTINGS) }) { Icon(Icons.Filled.Settings, "설정") }
                 },
@@ -312,8 +312,8 @@ private fun SaveBar(ui: MainUi, vm: MainViewModel) {
                 Spacer(Modifier.width(8.dp))
                 OutlinedButton(onClick = vm::cancelDownload) { Text("취소") }
             } else {
-                // videos and GIFs: save as mp4, or (switch on) open the GIF converter for each of them
-                if (ui.chosenMotion.isNotEmpty()) {
+                // videos and GIFs: save as mp4, or (switch on) open the GIF converter for each of them; photos are always saved
+                run {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
@@ -321,7 +321,7 @@ private fun SaveBar(ui: MainUi, vm: MainViewModel) {
                             .toggleable(value = ui.gifMode, role = Role.Switch, onValueChange = vm::setGifMode)
                             .padding(horizontal = 8.dp, vertical = 4.dp),
                     ) {
-                        Text("GIF로", style = MaterialTheme.typography.labelLarge)
+                        Text("GIF", style = MaterialTheme.typography.labelLarge)
                         Spacer(Modifier.width(6.dp))
                         Switch(checked = ui.gifMode, onCheckedChange = null)
                     }
@@ -333,7 +333,7 @@ private fun SaveBar(ui: MainUi, vm: MainViewModel) {
                     again -> "다시 저장"
                     else -> "저장"
                 }
-                Button(onClick = vm::downloadSelected, enabled = ui.chosen.isNotEmpty()) { Text(label) }
+                Button(onClick = vm::downloadSelected) { Text(label) }
             }
         }
     }

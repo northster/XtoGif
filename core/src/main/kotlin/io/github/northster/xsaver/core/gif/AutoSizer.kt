@@ -13,7 +13,8 @@ import kotlin.math.roundToInt
  *   [GifSizeModel.quality], and only those that are predicted smaller than every better one stay (a Pareto front).
  *   So it drops 30→15 fps before it shrinks the picture, and never picks a combination that is both worse and bigger.
  * - The next try is where a size model, recalibrated after every encode, says the limit is; plain halving is
- *   the fallback when the model misses twice in a row. Usually 2–4 encodes instead of ~6.
+ *   the fallback when the model misses twice in a row. Starting from the size constant measured on a sample and
+ *   stopping at a fit within 10% of the target, it usually takes 1–3 encodes instead of ~6.
  * With [allowTrim] the ladder stops at 240 px · 10 fps · 64 colours; if that is still too big, the clip is cut short
  * (kept from its start) instead of going lower.
  */
@@ -27,6 +28,10 @@ class AutoSizer(
     private val maxAttempts: Int = 8,
     private val maxWidth: Int = 1080,
     private val maxFps: Int = 30,
+    /** Size constant already measured on this clip (the estimate's sample), so the first try is close. */
+    private val initialK: Double = GifSizeModel.DEFAULT_K,
+    /** A fit this close to the target ends the search: the next better step would gain little. */
+    private val goodEnough: Double = 0.9,
 ) {
     data class Attempt(val params: GifParams, val bytes: Long, val fits: Boolean)
 
@@ -76,7 +81,7 @@ class AutoSizer(
     suspend fun run(onAttempt: (Attempt) -> Unit = {}, encode: suspend (GifParams) -> Long): Outcome {
         val attempts = mutableListOf<Attempt>()
         val l = ladder
-        var k = GifSizeModel.DEFAULT_K
+        var k = initialK
         var lo = 0                 // indexes below lo are known (or assumed, sizes being monotone) to be too big
         var hi = l.lastIndex       // the best fitting index found so far is hi + 1
         var best: Attempt? = null
@@ -103,6 +108,7 @@ class AutoSizer(
                 best = a
                 hi = probe - 1
                 misses = 0
+                if (a.bytes >= targetBytes * goodEnough) break
             } else {
                 lo = probe + 1
                 misses++

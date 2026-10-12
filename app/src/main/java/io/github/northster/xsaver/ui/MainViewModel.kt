@@ -546,7 +546,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 val sizer = AutoSizer(
                     src = info, targetBytes = target, dither = s.dither, startSec = s.start.toDouble(), durationSec = s.duration,
-                    allowTrim = s.allowTrim, maxWidth = settings.maxGifWidth,
+                    allowTrim = s.allowTrim, maxWidth = settings.maxGifWidth, initialK = calibratedK,
                 )
                 var n = 0
                 val outcome = sizer.run(

@@ -39,9 +39,11 @@ class AutoSizerTest {
             val fits = assertIs<AutoSizer.Outcome.Fits>(out, "scale $scale target $target")
             assertTrue(fits.attempt.bytes <= target)
             assertTrue(fits.attempts.size <= 8)
-            // nothing better on the ladder would have fit
+            // nothing better on the ladder would have fit, or it is within 10% of the target
             val idx = sizer.ladder.indexOf(fits.attempt.params)
-            if (idx > 0) assertTrue(fakeSize(sizer.ladder[idx - 1], scale) > target, "scale $scale target $target idx $idx")
+            if (idx > 0 && fits.attempt.bytes < target * 0.9) {
+                assertTrue(fakeSize(sizer.ladder[idx - 1], scale) > target, "scale $scale target $target idx $idx")
+            }
             println("scale $scale target $target -> ${fits.attempt.params.describe(src)} ${fits.attempt.bytes} in ${fits.attempts.size} tries")
         }
     }
