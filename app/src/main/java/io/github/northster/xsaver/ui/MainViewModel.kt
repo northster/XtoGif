@@ -36,6 +36,7 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.Locale
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -118,6 +119,9 @@ data class ConvertUi(
     val fresh: Boolean = false,
     /** Settings the automatic mode is expected to pick, for the estimate line. */
     val estimateLabel: String? = null,
+    /** Expected size of the 100% GIF (best settings: the source's size up to the max width, up to 30 fps, 256 colours). */
+    val fullBytes: Long? = null,
+    val fullLabel: String? = null,
     val entryKey: String? = null,
     val queueLeft: Int = 0,
     val message: String? = null,
@@ -125,6 +129,13 @@ data class ConvertUi(
     val targetBytes: Long?
         get() = targetMb.replace(',', '.').trim().toDoubleOrNull()?.takeIf { it > 0 }?.let { (it * Bytes.MB).toLong() }
     val duration get() = (end - start).toDouble()
+    /** The target as a share of the 100% GIF, for the slider. */
+    val targetPercent: Float?
+        get() {
+            val full = fullBytes?.takeIf { it > 0 } ?: return null
+            val t = targetBytes ?: return null
+            return (t * 100f / full).coerceIn(0f, 100f)
+        }
 
     fun manualParams() = GifParams(width, fps, colors, dither, start.toDouble(), duration)
 }
@@ -487,9 +498,25 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         return Triple(p, GifSizeModel.predict(info, p, k).toLong(), label)
     }
 
+    /** The best settings the automatic mode can use (top of its ladder): the "100%" GIF the size slider is relative to. */
+    private fun fullParams(info: SourceInfo, s: ConvertUi): GifParams =
+        AutoSizer(info, 1, s.dither, s.start.toDouble(), s.duration, false, maxWidth = settings.maxGifWidth).ladder.first()
+
+    private fun applyEstimates(info: SourceInfo, s: ConvertUi, k: Double, measured: Boolean) {
+        val full = fullParams(info, s)
+        val main = estimateFor(info, s, k)
+        _convert.update {
+            it.copy(
+                estimate = main?.second, estimateLabel = main?.third, estimateMeasured = measured,
+                fullBytes = GifSizeModel.predict(info, full, k).toLong(), fullLabel = full.describe(info),
+            )
+        }
+    }
+
     /**
-     * The expected size: right away from the size model, then again after encoding a short sample (up to 2 s from the
-     * middle of the range, at the settings that would be used) once the controls rest.
+     * The expected size and the size of the 100% GIF: right away from the size model, then again after encoding a
+     * short sample (up to 2 s from the middle of the range) once the controls rest. The sample uses the manual settings
+     * in manual mode, else the 100% settings.
      */
     private fun requestEstimate() {
         estimateJob?.cancel()
@@ -497,22 +524,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val info = s.info ?: return
         val source = s.source ?: return
         if (s.running) return
-        val first = estimateFor(info, s, calibratedK)
-        _convert.update { it.copy(estimate = first?.second, estimateLabel = first?.third, estimateMeasured = false) }
-        first ?: return
+        applyEstimates(info, s, calibratedK, measured = false)
         estimateJob = viewModelScope.launch {
             delay(600)
             _convert.update { it.copy(estimating = true) }
             try {
-                val params = first.first
+                val params = if (s.mode == ConvertMode.MANUAL) s.manualParams() else fullParams(info, s)
                 val sampleLen = min(2.0, params.durationSec)
                 val sample = params.copy(startSec = params.startSec + (params.durationSec - sampleLen) / 2, durationSec = sampleLen)
                 val bytes = GifEngine.encode(source, sample, File(workDir, "sample.gif"))
                 calibratedK = GifSizeModel.calibrate(info, sample, bytes)
-                val now = estimateFor(info, _convert.value, calibratedK)
-                _convert.update {
-                    it.copy(estimate = now?.second, estimateLabel = now?.third, estimateMeasured = true, estimating = false)
-                }
+                applyEstimates(info, _convert.value, calibratedK, measured = true)
+                _convert.update { it.copy(estimating = false) }
             } catch (c: CancellationException) {
                 _convert.update { it.copy(estimating = false) }
                 throw c
@@ -520,6 +543,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 _convert.update { it.copy(estimating = false) }
             }
         }
+    }
+
+    /** The size slider: [percent] of the 100% GIF, as the target. */
+    fun setTargetPercent(percent: Int) {
+        val full = _convert.value.fullBytes ?: return
+        val mb = full * percent / 100.0 / Bytes.MB
+        setTarget(
+            when {
+                mb >= 10 -> String.format(Locale.US, "%.0f", mb)
+                mb >= 0.1 -> String.format(Locale.US, "%.1f", mb)
+                else -> String.format(Locale.US, "%.2f", mb)
+            },
+        )
     }
 
     /** The main button: convert with the current settings and save, or only save when that result is already there. */

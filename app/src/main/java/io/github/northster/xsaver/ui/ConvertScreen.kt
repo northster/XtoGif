@@ -231,7 +231,32 @@ private fun SourcePlayer(ui: ConvertUi) {
 /** Always visible: target size, expected size, the main button. */
 @Composable
 private fun SimpleBar(ui: ConvertUi, vm: MainViewModel, modifier: Modifier) {
-    Column(modifier.padding(horizontal = 16.dp).padding(bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(modifier.padding(horizontal = 16.dp).padding(bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        // the 100% GIF (source size, best settings) and the target as a share of it, in 10% steps
+        Text(
+            "원본 크기 GIF (100%) " + (ui.fullBytes?.let { "${if (ui.estimateMeasured) "≈" else "약"} ${Bytes.format(it)}" } ?: "계산 중…") +
+                (ui.fullLabel?.let { "  ·  $it" } ?: ""),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        val percent = ui.targetPercent
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Slider(
+                value = ((percent ?: 100f) / 10f).roundToInt().coerceIn(1, 10) * 10f,
+                onValueChange = { vm.setTargetPercent((it / 10f).roundToInt().coerceIn(1, 10) * 10) },
+                valueRange = 10f..100f,
+                steps = 8,
+                enabled = ui.fullBytes != null && !ui.running,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                percent?.let { "${it.roundToInt()}%" } ?: "-",
+                style = MaterialTheme.typography.labelLarge,
+                modifier = Modifier.width(52.dp).padding(start = 8.dp),
+            )
+        }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             OutlinedTextField(
                 value = ui.targetMb,
