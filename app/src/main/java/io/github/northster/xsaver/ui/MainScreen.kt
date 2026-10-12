@@ -307,33 +307,37 @@ private fun SaveBar(ui: MainUi, vm: MainViewModel) {
                 Text("${ui.chosen.size}개 선택", style = MaterialTheme.typography.bodyMedium)
                 if (total.isNotEmpty()) Text(total, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+            // videos and GIFs: saved as mp4, or (switch on) the GIF converter opens for each of them; photos are always saved
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .clip(MaterialTheme.shapes.large)
+                    .toggleable(value = ui.gifMode, role = Role.Switch, onValueChange = vm::setGifMode)
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+            ) {
+                Text("GIF", style = MaterialTheme.typography.labelLarge)
+                Spacer(Modifier.width(6.dp))
+                Switch(checked = ui.gifMode, onCheckedChange = null)
+            }
+            Spacer(Modifier.width(8.dp))
+            // fixed width: the switch, the label and downloading must not move anything
+            val buttonModifier = Modifier.width(112.dp)
             if (ui.downloading) {
-                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                Spacer(Modifier.width(8.dp))
-                OutlinedButton(onClick = vm::cancelDownload) { Text("취소") }
-            } else {
-                // videos and GIFs: save as mp4, or (switch on) open the GIF converter for each of them; photos are always saved
-                run {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .clip(MaterialTheme.shapes.large)
-                            .toggleable(value = ui.gifMode, role = Role.Switch, onValueChange = vm::setGifMode)
-                            .padding(horizontal = 8.dp, vertical = 4.dp),
-                    ) {
-                        Text("GIF", style = MaterialTheme.typography.labelLarge)
-                        Spacer(Modifier.width(6.dp))
-                        Switch(checked = ui.gifMode, onCheckedChange = null)
-                    }
+                OutlinedButton(onClick = vm::cancelDownload, modifier = buttonModifier, contentPadding = PaddingValues(horizontal = 8.dp)) {
+                    CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
                     Spacer(Modifier.width(8.dp))
+                    Text("취소", maxLines = 1)
                 }
+            } else {
                 val again = ui.chosen.isNotEmpty() && ui.chosen.all { it.state == EntryState.SAVED }
                 val label = when {
                     ui.gifMode && ui.chosenMotion.isNotEmpty() -> "GIF 변환"
                     again -> "다시 저장"
                     else -> "저장"
                 }
-                Button(onClick = vm::downloadSelected) { Text(label) }
+                Button(onClick = vm::downloadSelected, modifier = buttonModifier, contentPadding = PaddingValues(horizontal = 8.dp)) {
+                    Text(label, maxLines = 1)
+                }
             }
         }
     }

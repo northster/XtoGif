@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- XtoGIF: an X, an arrow down, and "GIF" (all inside the adaptive icon's 66 dp safe zone) -->
+<!-- XtoGIF: "X", a small "to", "GIF" in white, stacked inside the adaptive icon's 66 dp safe zone -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
@@ -7,35 +7,38 @@
     android:viewportHeight="108">
     <!-- X -->
     <path
-        android:pathData="M47,27 L61,43 M61,27 L47,43"
+        android:pathData="M47,24 L61,40 M61,24 L47,40"
         android:strokeWidth="5"
         android:strokeColor="#FFFFFFFF"
         android:strokeLineCap="round" />
-    <!-- arrow -->
+    <!-- to (small) -->
     <path
-        android:pathData="M49,49 L54,54 L59,49"
-        android:strokeWidth="3.5"
-        android:strokeColor="#FF1D9BF0"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round" />
-    <!-- G -->
+        android:pathData="M50,44.5 L50,52.5 M47.5,47 L52.5,47"
+        android:strokeWidth="2.2"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round" />
     <path
-        android:pathData="M45,62 L36,62 L36,79 L45,79 L45,71 L40.5,71"
+        android:pathData="M54.6,50 A3,3 0 1,0 60.6,50 A3,3 0 1,0 54.6,50"
+        android:strokeWidth="2.2"
+        android:strokeColor="#FFFFFFFF" />
+    <!-- G: open at the top right, bar into the middle -->
+    <path
+        android:pathData="M49.5,63.5 A8.5,8.5 0 1,0 51.5,69 L44,69"
         android:strokeWidth="4.5"
-        android:strokeColor="#FF1D9BF0"
+        android:strokeColor="#FFFFFFFF"
         android:strokeLineCap="round"
         android:strokeLineJoin="round" />
     <!-- I -->
     <path
-        android:pathData="M54,62 L54,79"
+        android:pathData="M58,60.5 L58,77.5"
         android:strokeWidth="4.5"
-        android:strokeColor="#FF1D9BF0"
+        android:strokeColor="#FFFFFFFF"
         android:strokeLineCap="round" />
     <!-- F -->
     <path
-        android:pathData="M63,79 L63,62 L72,62 M63,70.5 L69.5,70.5"
+        android:pathData="M65,77.5 L65,60.5 L74,60.5 M65,69 L71.5,69"
         android:strokeWidth="4.5"
-        android:strokeColor="#FF1D9BF0"
+        android:strokeColor="#FFFFFFFF"
         android:strokeLineCap="round"
         android:strokeLineJoin="round" />
 </vector>
