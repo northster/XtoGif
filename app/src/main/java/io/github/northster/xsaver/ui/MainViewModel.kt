@@ -123,6 +123,8 @@ data class ConvertUi(
     val fullBytes: Long? = null,
     val fullLabel: String? = null,
     val sliderCapBytes: Long = 20 * Bytes.MB,
+    /** The target was typed or slid; before that it follows the slider's default position. */
+    val targetTouched: Boolean = false,
     val entryKey: String? = null,
     val queueLeft: Int = 0,
     val message: String? = null,
@@ -403,7 +405,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         stopConvertJobs()
         calibratedK = GifSizeModel.DEFAULT_K
         _convert.value = ConvertUi(
-            title = title, baseName = baseName, preparing = true, targetMb = settings.targetMb,
+            title = title, baseName = baseName, preparing = true,
+            // a first guess until the 100% size is known: the default position on the slider's maximum
+            targetMb = String.format(Locale.US, "%.1f", settings.sliderMaxMb * settings.sliderDefaultPercent / 100f),
             allowTrim = settings.allowTrim, dither = settings.dither, entryKey = entryKey, queueLeft = convertQueue.size,
             sliderCapBytes = (settings.sliderMaxMb * Bytes.MB).toLong(),
             message = message,
@@ -441,8 +445,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun dismissConvertMessage() = _convert.update { it.copy(message = null) }
 
     fun setTarget(mb: String) {
-        _convert.update { it.copy(targetMb = mb, fresh = false) }
-        if (_convert.value.targetBytes != null) settings.targetMb = mb
+        _convert.update { it.copy(targetMb = mb, fresh = false, targetTouched = true) }
         requestEstimate()
     }
 
@@ -508,12 +511,27 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun applyEstimates(info: SourceInfo, s: ConvertUi, k: Double, measured: Boolean) {
         val full = fullParams(info, s)
-        val main = estimateFor(info, s, k)
+        val fullBytes = GifSizeModel.predict(info, full, k).toLong()
+        // until the target is set by hand it sits at the slider's default position, following the 100% size
+        val st = if (s.targetTouched) s.copy(fullBytes = fullBytes)
+        else s.copy(fullBytes = fullBytes).let { it.copy(targetMb = percentToMb(it, settings.sliderDefaultPercent) ?: it.targetMb) }
+        val main = estimateFor(info, st, k)
         _convert.update {
             it.copy(
                 estimate = main?.second, estimateLabel = main?.third, estimateMeasured = measured,
-                fullBytes = GifSizeModel.predict(info, full, k).toLong(), fullLabel = full.describe(info),
+                fullBytes = fullBytes, fullLabel = full.describe(info),
+                targetMb = if (it.targetTouched) it.targetMb else st.targetMb,
             )
+        }
+    }
+
+    private fun percentToMb(s: ConvertUi, percent: Int): String? {
+        val max = s.sliderMaxBytes ?: return null
+        val mb = max * percent / 100.0 / Bytes.MB
+        return when {
+            mb >= 10 -> String.format(Locale.US, "%.0f", mb)
+            mb >= 0.1 -> String.format(Locale.US, "%.1f", mb)
+            else -> String.format(Locale.US, "%.2f", mb)
         }
     }
 
@@ -551,15 +569,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /** The size slider: [percent] of its top (the 100% GIF or the maximum from the settings), as the target. */
     fun setTargetPercent(percent: Int) {
-        val max = _convert.value.sliderMaxBytes ?: return
-        val mb = max * percent / 100.0 / Bytes.MB
-        setTarget(
-            when {
-                mb >= 10 -> String.format(Locale.US, "%.0f", mb)
-                mb >= 0.1 -> String.format(Locale.US, "%.1f", mb)
-                else -> String.format(Locale.US, "%.2f", mb)
-            },
-        )
+        percentToMb(_convert.value, percent)?.let { setTarget(it) }
     }
 
     /** The main button: convert with the current settings and save, or only save when that result is already there. */

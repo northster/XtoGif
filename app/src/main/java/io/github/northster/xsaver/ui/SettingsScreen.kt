@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
+import kotlin.math.roundToInt
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -54,6 +56,7 @@ fun SettingsScreen(vm: MainViewModel) {
     var gifAsGif by remember { mutableStateOf(s.gifAsGif) }
     var enabled by remember { mutableStateOf(Source.entries.associateWith { s.isEnabled(it) }) }
     var maxWidth by remember { mutableIntStateOf(s.maxGifWidth) }
+    var defaultPercent by remember { mutableIntStateOf(s.sliderDefaultPercent) }
     var sliderMax by remember { mutableStateOf(s.sliderMaxMb.let { if (it % 1f == 0f) it.toInt().toString() else it.toString() }) }
     var ytdlp by remember { mutableStateOf("") }
 
@@ -132,6 +135,14 @@ fun SettingsScreen(vm: MainViewModel) {
                     }
                 }
             }
+            Text("슬라이더 기본 위치: ${defaultPercent}%", fontWeight = FontWeight.Bold)
+            Slider(
+                value = defaultPercent.toFloat(),
+                onValueChange = { defaultPercent = ((it / 5f).roundToInt() * 5).coerceIn(5, 100) },
+                onValueChangeFinished = { s.sliderDefaultPercent = defaultPercent },
+                valueRange = 5f..100f,
+                steps = 18,
+            )
             HorizontalDivider()
             Text("자동 GIF 변환의 최대 가로 해상도", fontWeight = FontWeight.Bold)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
