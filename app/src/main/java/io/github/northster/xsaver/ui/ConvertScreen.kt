@@ -74,6 +74,15 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.FilledTonalButton
+import coil3.size.Size as CoilSize
+import java.io.File
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import coil3.request.CachePolicy
@@ -157,6 +166,77 @@ fun ConvertScreen(vm: MainViewModel) {
     }
 }
 
+/**
+ * An image at its real size (1 image pixel = 1 screen pixel, never enlarged), so a small GIF looks as small as it is.
+ * If it is bigger than the space, it is shrunk to fit and a "전체화면" button shows it alone on the whole screen.
+ */
+@Composable
+private fun PixelImage(file: File, widthPx: Int, heightPx: Int, description: String, onTap: (() -> Unit)?) {
+    val context = LocalContext.current
+    var fullscreen by remember { mutableStateOf(false) }
+    val request = remember(file) {
+        ImageRequest.Builder(context).data(file).size(CoilSize.ORIGINAL)
+            .memoryCachePolicy(CachePolicy.DISABLED).diskCachePolicy(CachePolicy.DISABLED).build()
+    }
+    BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        val fits = widthPx <= constraints.maxWidth && heightPx <= constraints.maxHeight
+        AsyncImage(
+            model = request,
+            contentDescription = description,
+            contentScale = ContentScale.Inside, // shrinks when needed, never enlarges
+            filterQuality = FilterQuality.None, // real pixels: dithering and blockiness as they will be
+            modifier = Modifier.fillMaxSize().then(if (onTap != null) Modifier.clickable(onClick = onTap) else Modifier),
+        )
+        if (!fits) {
+            FilledTonalButton(
+                onClick = { fullscreen = true },
+                modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp),
+            ) { Text("전체화면") }
+        }
+    }
+    if (fullscreen) FullscreenImage(request, widthPx, heightPx) { fullscreen = false }
+}
+
+/** The image alone on a black screen: fitted, or tap for the real size (1:1) and scroll around. */
+@Composable
+private fun FullscreenImage(request: ImageRequest, widthPx: Int, heightPx: Int, onClose: () -> Unit) {
+    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        var actual by remember { mutableStateOf(false) }
+        val density = LocalDensity.current
+        Box(Modifier.fillMaxSize().background(Color.Black)) {
+            if (actual) {
+                Box(
+                    Modifier.fillMaxSize().verticalScroll(rememberScrollState()).horizontalScroll(rememberScrollState())
+                        .clickable { actual = false },
+                ) {
+                    AsyncImage(
+                        model = request,
+                        contentDescription = null,
+                        contentScale = ContentScale.FillBounds,
+                        filterQuality = FilterQuality.None,
+                        modifier = Modifier.size(with(density) { widthPx.toDp() }, with(density) { heightPx.toDp() }),
+                    )
+                }
+            } else {
+                AsyncImage(
+                    model = request,
+                    contentDescription = null,
+                    contentScale = ContentScale.Fit,
+                    filterQuality = FilterQuality.None,
+                    modifier = Modifier.fillMaxSize().clickable { actual = true },
+                )
+            }
+            IconButton(onClick = onClose, modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(8.dp)) {
+                Icon(Icons.Filled.Close, "닫기", tint = Color.White)
+            }
+            Badge(
+                if (actual) "실제 크기 ${widthPx}×${heightPx} · 누르면 화면에 맞춤" else "화면에 맞춤 · 누르면 실제 크기",
+                Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(16.dp),
+            )
+        }
+    }
+}
+
 /** The result GIF once there is one, else the source video looping over the chosen range. */
 @Composable
 private fun Picture(ui: ConvertUi) {
@@ -173,12 +253,7 @@ private fun Picture(ui: ConvertUi) {
         ui.info == null -> {}
         ui.result != null -> {
             val result = ui.result
-            val context = LocalContext.current
-            val request = remember(result) {
-                ImageRequest.Builder(context).data(result.file)
-                    .memoryCachePolicy(CachePolicy.DISABLED).diskCachePolicy(CachePolicy.DISABLED).build()
-            }
-            AsyncImage(model = request, contentDescription = "GIF", contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
+            PixelImage(result.file, result.params.width, ui.info?.let { result.params.height(it) } ?: 0, "GIF", onTap = null)
             val target = ui.targetBytes
             val verdict = when {
                 result.preview -> "미리보기 (앞 3초)"
@@ -198,17 +273,9 @@ private fun Picture(ui: ConvertUi) {
             val shownParams = if (ui.clip != null) ui.clipParams else ui.stillParams
             val info = ui.info
             if (still != null && !showVideo) {
-                val context = LocalContext.current
-                val request = remember(still) {
-                    ImageRequest.Builder(context).data(still)
-                        .memoryCachePolicy(CachePolicy.DISABLED).diskCachePolicy(CachePolicy.DISABLED).build()
-                }
-                AsyncImage(
-                    model = request,
-                    contentDescription = "미리보기",
-                    contentScale = ContentScale.Fit,
-                    filterQuality = FilterQuality.None, // real pixels: dithering and blockiness as they will be
-                    modifier = Modifier.fillMaxSize().clickable { showVideo = true },
+                PixelImage(
+                    still, shownParams?.width ?: 0, info?.let { i -> shownParams?.height(i) } ?: 0, "미리보기",
+                    onTap = { showVideo = true },
                 )
                 Box(Modifier.fillMaxSize().padding(8.dp), contentAlignment = Alignment.TopStart) {
                     val what = if (ui.clip != null) "미리보기 앞 3초" else "미리보기 한 장 (움직이는 미리보기 만드는 중…)"
