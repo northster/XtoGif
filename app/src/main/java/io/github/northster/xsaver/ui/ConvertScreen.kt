@@ -80,6 +80,8 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.DpSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.wrapContentHeight
 import io.github.northster.xsaver.core.gif.Knob
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -354,32 +356,20 @@ private fun SimpleBar(ui: ConvertUi, vm: MainViewModel, modifier: Modifier) {
     val knobs = remember(ui.info) { vm.knobValues() }
     val enabled = !ui.running && ui.info != null
     Column(modifier.padding(horizontal = 16.dp).padding(bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        // target: 5% steps of the slider's maximum
-        val percent = ui.targetPercent
+        // target size in 5% steps of the slider's maximum, shown in MB; unlocked it shows the expected size
+        val shown = if (ui.targetLocked) ui.targetBytes else ui.estimate
+        val max = ui.sliderMaxBytes
+        val percent = if (shown != null && max != null && max > 0) (shown * 100f / max).coerceIn(0f, 100f) else null
         KnobSlider(
             label = "목표 용량",
             index = (((percent ?: 50f) / 5f).roundToInt() - 1).coerceIn(0, 19),
             count = 20,
-            valueText = percent?.let { "${it.roundToInt()}%" } ?: "-",
+            valueText = shown?.let { Bytes.format(it) } ?: "-",
             enabled = enabled && ui.fullBytes != null,
-            highlighted = false,
+            locked = ui.targetLocked,
+            onLabelClick = vm::toggleTargetLock,
         ) { i -> vm.setTargetPercent((i + 1) * 5) }
-        val est = ui.estimate
-        val target = ui.targetBytes
-        Text(
-            buildString {
-                append("목표 ${target?.let { Bytes.format(it) } ?: "-"}")
-                append(" · 예상 ")
-                append(if (est == null) "…" else "${if (ui.estimateMeasured) "≈" else "약"} ${Bytes.format(est)}")
-                if (est != null && target != null && est > target) append(" ✗")
-                if (ui.estimating) append(" · 확인 중")
-            },
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.Bold,
-            textAlign = TextAlign.End,
-            modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
-        )
-        // the three settings: moving one keeps it, the other two follow the target
+        // the three settings: tap a name to lock it (moving the slider locks it too); unlocked ones follow the target
         if (knobs != null) {
             val info = ui.info
             for ((knob, label) in listOf(Knob.WIDTH to "해상도", Knob.FPS to "프레임", Knob.COLORS to "색상")) {
@@ -400,7 +390,8 @@ private fun SimpleBar(ui: ConvertUi, vm: MainViewModel, modifier: Modifier) {
                         Knob.COLORS -> "${current}색"
                     },
                     enabled = enabled,
-                    highlighted = ui.lock == knob,
+                    locked = knob in ui.locks,
+                    onLabelClick = { vm.toggleKnobLock(knob) },
                 ) { i -> vm.setKnob(knob, values[i]) }
             }
         }
@@ -421,16 +412,40 @@ private fun SimpleBar(ui: ConvertUi, vm: MainViewModel, modifier: Modifier) {
                 if (ui.running) OutlinedButton(onClick = vm::cancelRun) { Text("취소") }
             }
         } else {
-            val ready = ui.info != null && !ui.preparing
-            val label = when {
-                ui.result != null && !ui.result.preview && ui.fresh -> if (ui.savedUri == null) "저장" else "다시 저장"
-                else -> "변환 및 저장"
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                // expected size on the left, the button on the right
+                Column(Modifier.weight(1f)) {
+                    val est = ui.estimate
+                    val target = ui.targetBytes
+                    val over = ui.targetLocked && est != null && target != null && est > target
+                    Text(
+                        if (est == null) "예상 …" else "예상 ${if (ui.estimateMeasured) "≈" else "약"} ${Bytes.format(est)}${if (over) " ✗" else ""}",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = if (over) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                    )
+                    Text(
+                        when {
+                            ui.estimating -> "샘플로 확인 중…"
+                            ui.estimateMeasured -> "샘플로 확인한 값"
+                            else -> "대략값"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                val ready = ui.info != null && !ui.preparing
+                val label = when {
+                    ui.result != null && !ui.result.preview && ui.fresh -> if (ui.savedUri == null) "저장" else "다시 저장"
+                    else -> "변환 및 저장"
+                }
+                Button(
+                    onClick = vm::convertAndSave,
+                    enabled = ready && (!ui.targetLocked || ui.targetBytes != null),
+                    modifier = Modifier.weight(1.2f).height(52.dp),
+                ) { Text(label, style = MaterialTheme.typography.titleMedium, maxLines = 1) }
             }
-            Button(
-                onClick = vm::convertAndSave,
-                enabled = ready && ui.targetBytes != null,
-                modifier = Modifier.fillMaxWidth().height(52.dp),
-            ) { Text(label, style = MaterialTheme.typography.titleMedium) }
         }
         if (ui.queueLeft > 0) {
             Text(
@@ -451,16 +466,19 @@ private fun KnobSlider(
     count: Int,
     valueText: String,
     enabled: Boolean,
-    highlighted: Boolean,
+    locked: Boolean,
+    onLabelClick: () -> Unit,
     onIndex: (Int) -> Unit,
 ) {
     val interaction = remember { MutableInteractionSource() }
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.height(34.dp)) {
+        // tap the name to lock / unlock: locked is bold and in the accent colour
         Text(
             label,
             style = MaterialTheme.typography.labelLarge,
-            color = if (highlighted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.width(64.dp),
+            fontWeight = if (locked) FontWeight.ExtraBold else FontWeight.Normal,
+            color = if (locked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.width(68.dp).fillMaxHeight().clickable(onClick = onLabelClick).wrapContentHeight(Alignment.CenterVertically),
         )
         CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 30.dp) {
             Slider(
@@ -478,6 +496,8 @@ private fun KnobSlider(
         Text(
             valueText,
             style = MaterialTheme.typography.labelLarge,
+            fontWeight = if (locked) FontWeight.Bold else FontWeight.Normal,
+            color = if (locked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
             textAlign = TextAlign.End,
             maxLines = 1,
             modifier = Modifier.width(84.dp),
@@ -505,8 +525,9 @@ private fun Details(ui: ConvertUi, vm: MainViewModel) {
             enabled = enabled,
         )
         Text(
-            "목표 용량에 맞춰 프레임(최저 10fps) → 색상(최저 64색) → 해상도 순으로 줄입니다. 해상도·프레임·색상 중 하나를 직접 " +
-                "움직이면 그 값은 고정되고 나머지 둘이 맞춰집니다. 변환할 때 실제 용량을 재며 맞추므로 1~3번 시도할 수 있습니다.",
+            "이름을 누르면 잠금(굵은 강조색), 잠긴 값은 손으로만 바뀝니다. 목표 용량이 잠겨 있으면 잠기지 않은 항목이 " +
+                "프레임(최저 12fps) → 색상(최저 64색) → 해상도 순으로 줄어 목표에 맞춰지고, 한 항목만 남으면 프레임은 6fps, 색상은 " +
+                "32색까지 내려갑니다. 해상도·프레임·색상 중 둘을 잠그면 목표 용량 잠금이 풀리고, 그때는 정한 값 그대로 변환합니다.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

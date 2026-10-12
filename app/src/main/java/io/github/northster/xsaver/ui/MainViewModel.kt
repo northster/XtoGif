@@ -101,9 +101,13 @@ data class ConvertUi(
     val targetMb: String = "8",
     val start: Float = 0f,
     val end: Float = 0f,
-    val mode: ConvertMode = ConvertMode.AUTO,
-    /** The resolution, frame rate or colour slider moved by hand last: it stays, the other two follow the target. */
-    val lock: Knob? = null,
+    /**
+     * Locked settings keep their value; the unlocked ones follow. With the target size locked (the default), unlocked
+     * settings are picked to fit it; with it unlocked, the settings are used as they are and the target shows the
+     * expected size. Order of locking, oldest first.
+     */
+    val locks: List<Knob> = emptyList(),
+    val targetLocked: Boolean = true,
     val allowTrim: Boolean = false,
     val dither: Dither = Dither.BAYER,
     val width: Int = 480,
@@ -144,6 +148,8 @@ data class ConvertUi(
     val targetBytes: Long?
         get() = targetMb.replace(',', '.').trim().toDoubleOrNull()?.takeIf { it > 0 }?.let { (it * Bytes.MB).toLong() }
     val duration get() = (end - start).toDouble()
+    /** Target locked: the size decides; unlocked: the sliders do. */
+    val mode: ConvertMode get() = if (targetLocked) ConvertMode.AUTO else ConvertMode.MANUAL
     /** Top of the size slider: the 100% GIF, at most the maximum from the settings. */
     val sliderMaxBytes: Long? get() = fullBytes?.takeIf { it > 0 }?.let { minOf(it, sliderCapBytes) }
     /** The target as a share of [sliderMaxBytes]. */
@@ -457,7 +463,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun dismissConvertMessage() = _convert.update { it.copy(message = null) }
 
     fun setTarget(mb: String) {
-        _convert.update { it.copy(targetMb = mb, fresh = false, targetTouched = true) }
+        _convert.update { lockTarget(it, null).copy(targetMb = mb) }
         requestEstimate()
     }
 
@@ -467,7 +473,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun setMode(mode: ConvertMode) {
-        _convert.update { it.copy(mode = mode, fresh = false) }
+        _convert.update { it.copy(targetLocked = mode == ConvertMode.AUTO, fresh = false) }
         requestEstimate()
     }
 
@@ -496,32 +502,64 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** What the automatic mode would pick under [target] with the size constant [k], and whether it fits. */
-    private fun lockValue(s: ConvertUi): Int = when (s.lock) {
-        Knob.WIDTH -> s.width
-        Knob.FPS -> s.fps
-        Knob.COLORS -> s.colors
-        null -> 0
+    private fun lockMap(s: ConvertUi): Map<Knob, Int> = s.locks.associateWith {
+        when (it) {
+            Knob.WIDTH -> s.width
+            Knob.FPS -> s.fps
+            Knob.COLORS -> s.colors
+        }
     }
 
-    private fun ladderFor(info: SourceInfo, s: ConvertUi, lock: Knob? = s.lock, allowTrim: Boolean = s.allowTrim) =
-        GifLadder(info, s.dither, s.start.toDouble(), s.duration, settings.maxGifWidth, 30, allowTrim, lock, lockValue(s))
+    private fun ladderFor(info: SourceInfo, s: ConvertUi, locks: Map<Knob, Int> = lockMap(s), allowTrim: Boolean = s.allowTrim) =
+        GifLadder(info, s.dither, s.start.toDouble(), s.duration, settings.maxGifWidth, 30, allowTrim, locks)
 
     /** Values the three sliders offer (best first), for the current source. */
     fun knobValues(): Map<Knob, List<Int>>? {
         val s = _convert.value
         val info = s.info ?: return null
-        val l = ladderFor(info, s, lock = null, allowTrim = false)
+        val l = ladderFor(info, s, locks = emptyMap(), allowTrim = false)
         return mapOf(Knob.WIDTH to l.widths, Knob.FPS to l.fpsValues, Knob.COLORS to l.colorValues)
     }
 
-    /** A slider moved by hand: that setting stays, the other two are picked again for the target. */
+    /** Locks one more setting; a second one frees the target size (two fixed settings leave too little to fit it). */
+    private fun ConvertUi.withLock(knob: Knob): ConvertUi {
+        if (knob in locks) return this
+        val l = locks + knob
+        return copy(locks = l, targetLocked = targetLocked && l.size < 2)
+    }
+
+    /** Tapping a slider's name. */
+    fun toggleKnobLock(knob: Knob) {
+        _convert.update { if (knob in it.locks) it.copy(locks = it.locks - knob) else it.withLock(knob) }
+        requestEstimate()
+    }
+
+    fun toggleTargetLock() {
+        _convert.update { s ->
+            if (s.targetLocked) s.copy(targetLocked = false, fresh = false)
+            else lockTarget(s, s.estimate)
+        }
+        requestEstimate()
+    }
+
+    /** Locks the target at [bytes] (the expected size when re-locked by tap); with all three settings locked one must give. */
+    private fun lockTarget(s: ConvertUi, bytes: Long?): ConvertUi {
+        val mb = bytes?.let { String.format(Locale.US, "%.2f", it / Bytes.MB.toDouble()) } ?: s.targetMb
+        return s.copy(
+            targetLocked = true, targetTouched = true, targetMb = mb, fresh = false,
+            locks = if (s.locks.size >= 3) s.locks.dropLast(1) else s.locks,
+        )
+    }
+
+    /** A slider moved by hand: that setting gets locked, the unlocked ones follow. */
     fun setKnob(knob: Knob, value: Int) {
         _convert.update {
-            when (knob) {
-                Knob.WIDTH -> it.copy(width = value, lock = knob, fresh = false)
-                Knob.FPS -> it.copy(fps = value, lock = knob, fresh = false)
-                Knob.COLORS -> it.copy(colors = value, lock = knob, fresh = false)
+            val moved = when (knob) {
+                Knob.WIDTH -> it.copy(width = value, fresh = false)
+                Knob.FPS -> it.copy(fps = value, fresh = false)
+                Knob.COLORS -> it.copy(colors = value, fresh = false)
             }
+            moved.withLock(knob)
         }
         requestEstimate()
     }
@@ -548,7 +586,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** The best settings the automatic mode can use (top of its ladder): the "100%" GIF the size slider is relative to. */
-    private fun fullParams(info: SourceInfo, s: ConvertUi): GifParams = ladderFor(info, s, lock = null, allowTrim = false).steps.first()
+    private fun fullParams(info: SourceInfo, s: ConvertUi): GifParams = ladderFor(info, s, locks = emptyMap(), allowTrim = false).steps.first()
 
     private fun applyEstimates(info: SourceInfo, s: ConvertUi, k: Double, measured: Boolean) {
         val full = fullParams(info, s)
@@ -683,7 +721,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 val sizer = AutoSizer(
                     src = info, targetBytes = target, dither = s.dither, startSec = s.start.toDouble(), durationSec = s.duration,
                     allowTrim = s.allowTrim, maxWidth = settings.maxGifWidth, initialK = calibratedK,
-                    lock = s.lock, lockValue = lockValue(s),
+                    locks = lockMap(s),
                 )
                 var n = 0
                 val outcome = sizer.run(
@@ -745,7 +783,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 val out = File(workDir, if (preview) "preview.gif" else "manual.gif")
                 val bytes = GifEngine.encode(src, p, out) { f -> _convert.update { it.copy(progress = f) } }
                 calibratedK = GifSizeModel.calibrate(info, p, bytes)
-                val target = s.targetBytes
+                val target = if (s.targetLocked) s.targetBytes else null
                 _convert.update {
                     it.copy(
                         running = false,
@@ -794,16 +832,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 _convert.update { it.copy(saving = false) }
             }
         }
-    }
-
-    /** Puts the found settings into manual mode for fine tuning. */
-    fun tuneResult() {
-        val r = _convert.value.result ?: return
-        _convert.update {
-            it.copy(mode = ConvertMode.MANUAL, width = r.params.width, fps = r.params.fps, colors = r.params.colors,
-                end = (r.params.startSec + r.params.durationSec).toFloat().coerceAtMost(it.info?.durationSec?.toFloat() ?: it.end))
-        }
-        requestEstimate()
     }
 
     companion object {

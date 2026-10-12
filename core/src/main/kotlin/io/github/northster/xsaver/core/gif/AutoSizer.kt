@@ -9,8 +9,8 @@ import kotlin.math.roundToInt
  *
  * Idea from sticker-convert (github.com/laggykiller/sticker-convert, GPL-2.0): order the settings from best to
  * smallest and binary search that ladder with real encodes, keeping the best one under the limit. Two changes:
- * - The ladder is not one knob turned down evenly: [GifLadder] lowers the frame rate first (not below 15 fps), then
- *   the colours, then the resolution, and can keep one of them fixed.
+ * - The ladder is not one knob turned down evenly: [GifLadder] lowers the frame rate first, then the colours, then
+ *   the resolution, and keeps the settings fixed by hand.
  * - The next try is where a size model, recalibrated after every encode, says the limit is; plain halving is
  *   the fallback when the model misses twice in a row. Starting from the size constant measured on a sample and
  *   stopping at a fit within 10% of the target, it usually takes 1–3 encodes instead of ~6.
@@ -31,9 +31,8 @@ class AutoSizer(
     private val initialK: Double = GifSizeModel.DEFAULT_K,
     /** A fit this close to the target ends the search: the next better step would gain little. */
     private val goodEnough: Double = 0.9,
-    /** A setting fixed by hand; the search only moves the other two. */
-    private val lock: Knob? = null,
-    private val lockValue: Int = 0,
+    /** Settings fixed by hand; the search only moves the others. */
+    private val locks: Map<Knob, Int> = emptyMap(),
 ) {
     data class Attempt(val params: GifParams, val bytes: Long, val fits: Boolean)
 
@@ -44,7 +43,7 @@ class AutoSizer(
     }
 
     val ladder: List<GifParams> by lazy {
-        GifLadder(src, dither, startSec, durationSec, maxWidth, maxFps, allowTrim, lock, lockValue).steps
+        GifLadder(src, dither, startSec, durationSec, maxWidth, maxFps, allowTrim, locks).steps
     }
 
     /** [encode] makes the GIF for the given settings and returns its size in bytes. */
