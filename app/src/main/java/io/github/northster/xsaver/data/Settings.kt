@@ -37,6 +37,11 @@ class Settings(context: Context) {
         get() = prefs.getBoolean("allow_trim", false)
         set(v) = prefs.edit().putBoolean("allow_trim", v).apply()
 
+    /** Top of the converter's size slider (MB); the 100% GIF is often far bigger than anything worth sending. */
+    var sliderMaxMb: Float
+        get() = prefs.getFloat("slider_max_mb", 20f)
+        set(v) = prefs.edit().putFloat("slider_max_mb", v).apply()
+
     var maxGifWidth: Int
         get() = prefs.getInt("max_gif_width", 1080)
         set(v) = prefs.edit().putInt("max_gif_width", v).apply()

@@ -232,10 +232,11 @@ private fun SourcePlayer(ui: ConvertUi) {
 @Composable
 private fun SimpleBar(ui: ConvertUi, vm: MainViewModel, modifier: Modifier) {
     Column(modifier.padding(horizontal = 16.dp).padding(bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        // the 100% GIF (source size, best settings) and the target as a share of it, in 10% steps
+        // the 100% GIF (source size, best settings); the slider goes up to it or the maximum from the settings, in 5% steps
         Text(
             "원본 크기 GIF (100%) " + (ui.fullBytes?.let { "${if (ui.estimateMeasured) "≈" else "약"} ${Bytes.format(it)}" } ?: "계산 중…") +
-                (ui.fullLabel?.let { "  ·  $it" } ?: ""),
+                (ui.fullLabel?.let { "  ·  $it" } ?: "") +
+                (ui.sliderMaxBytes?.let { max -> if (max < (ui.fullBytes ?: 0)) "  ·  슬라이더 최대 ${Bytes.format(max)}" else "" } ?: ""),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
@@ -244,10 +245,10 @@ private fun SimpleBar(ui: ConvertUi, vm: MainViewModel, modifier: Modifier) {
         val percent = ui.targetPercent
         Row(verticalAlignment = Alignment.CenterVertically) {
             Slider(
-                value = ((percent ?: 100f) / 10f).roundToInt().coerceIn(1, 10) * 10f,
-                onValueChange = { vm.setTargetPercent((it / 10f).roundToInt().coerceIn(1, 10) * 10) },
-                valueRange = 10f..100f,
-                steps = 8,
+                value = ((percent ?: 100f) / 5f).roundToInt().coerceIn(1, 20) * 5f,
+                onValueChange = { vm.setTargetPercent((it / 5f).roundToInt().coerceIn(1, 20) * 5) },
+                valueRange = 5f..100f,
+                steps = 18,
                 enabled = ui.fullBytes != null && !ui.running,
                 modifier = Modifier.weight(1f),
             )

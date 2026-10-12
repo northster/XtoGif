@@ -122,6 +122,7 @@ data class ConvertUi(
     /** Expected size of the 100% GIF (best settings: the source's size up to the max width, up to 30 fps, 256 colours). */
     val fullBytes: Long? = null,
     val fullLabel: String? = null,
+    val sliderCapBytes: Long = 20 * Bytes.MB,
     val entryKey: String? = null,
     val queueLeft: Int = 0,
     val message: String? = null,
@@ -129,12 +130,14 @@ data class ConvertUi(
     val targetBytes: Long?
         get() = targetMb.replace(',', '.').trim().toDoubleOrNull()?.takeIf { it > 0 }?.let { (it * Bytes.MB).toLong() }
     val duration get() = (end - start).toDouble()
-    /** The target as a share of the 100% GIF, for the slider. */
+    /** Top of the size slider: the 100% GIF, at most the maximum from the settings. */
+    val sliderMaxBytes: Long? get() = fullBytes?.takeIf { it > 0 }?.let { minOf(it, sliderCapBytes) }
+    /** The target as a share of [sliderMaxBytes]. */
     val targetPercent: Float?
         get() {
-            val full = fullBytes?.takeIf { it > 0 } ?: return null
+            val max = sliderMaxBytes ?: return null
             val t = targetBytes ?: return null
-            return (t * 100f / full).coerceIn(0f, 100f)
+            return (t * 100f / max).coerceIn(0f, 100f)
         }
 
     fun manualParams() = GifParams(width, fps, colors, dither, start.toDouble(), duration)
@@ -402,6 +405,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _convert.value = ConvertUi(
             title = title, baseName = baseName, preparing = true, targetMb = settings.targetMb,
             allowTrim = settings.allowTrim, dither = settings.dither, entryKey = entryKey, queueLeft = convertQueue.size,
+            sliderCapBytes = (settings.sliderMaxMb * Bytes.MB).toLong(),
             message = message,
         )
         navigate(Screen.CONVERT)
@@ -545,10 +549,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** The size slider: [percent] of the 100% GIF, as the target. */
+    /** The size slider: [percent] of its top (the 100% GIF or the maximum from the settings), as the target. */
     fun setTargetPercent(percent: Int) {
-        val full = _convert.value.fullBytes ?: return
-        val mb = full * percent / 100.0 / Bytes.MB
+        val max = _convert.value.sliderMaxBytes ?: return
+        val mb = max * percent / 100.0 / Bytes.MB
         setTarget(
             when {
                 mb >= 10 -> String.format(Locale.US, "%.0f", mb)
