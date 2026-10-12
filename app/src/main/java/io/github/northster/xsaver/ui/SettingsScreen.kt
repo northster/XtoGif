@@ -1,0 +1,112 @@
+package io.github.northster.xsaver.ui
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import io.github.northster.xsaver.data.Gallery
+import io.github.northster.xsaver.data.Source
+import io.github.northster.xsaver.data.YtDlp
+import kotlinx.coroutines.launch
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+fun SettingsScreen(vm: MainViewModel) {
+    val s = vm.settings
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var includeQuote by remember { mutableStateOf(s.includeQuote) }
+    var enabled by remember { mutableStateOf(Source.entries.associateWith { s.isEnabled(it) }) }
+    var maxWidth by remember { mutableIntStateOf(s.maxGifWidth) }
+    var ytdlp by remember { mutableStateOf("") }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("설정") },
+                navigationIcon = { IconButton(onClick = { vm.back() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
+            )
+        },
+    ) { padding ->
+        Column(
+            Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp).widthIn(max = 720.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("인용 게시물 미디어 기본으로 포함")
+                    Text("목록에서 게시물마다 켜고 끌 수 있음", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Switch(checked = includeQuote, onCheckedChange = { includeQuote = it; s.includeQuote = it })
+            }
+            HorizontalDivider()
+            Text("미디어 정보 가져오기 (위에서부터 차례로 시도)", fontWeight = FontWeight.Bold)
+            Source.entries.forEachIndexed { i, src ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("${i + 1}. ${src.label}")
+                        Text(src.note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(checked = enabled[src] == true, onCheckedChange = {
+                        s.setEnabled(src, it)
+                        enabled = enabled + (src to it)
+                    })
+                }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = {
+                    ytdlp = "업데이트 중… (처음에는 Python 준비로 시간이 걸림)"
+                    scope.launch { ytdlp = runCatching { YtDlp.update(context) }.getOrElse { "실패: ${it.message}" } }
+                }) { Text("yt-dlp 업데이트") }
+                Text(ytdlp, style = MaterialTheme.typography.bodySmall)
+            }
+            HorizontalDivider()
+            Text("자동 GIF 변환의 최대 가로 해상도", fontWeight = FontWeight.Bold)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf(480, 640, 720, 1080).forEach { w ->
+                    FilterChip(selected = maxWidth == w, onClick = { maxWidth = w; s.maxGifWidth = w }, label = { Text("${w}px") })
+                }
+            }
+            HorizontalDivider()
+            Text(
+                "저장 위치: 사진/${Gallery.ALBUM} (갤러리 앨범 '${Gallery.ALBUM}')\n" +
+                    "파일 이름: 작성자아이디_게시물ID_순번\n" +
+                    "GIF 변환: FFmpeg 8.1 (FFmpegKit, palettegen/paletteuse 2단계)\n" +
+                    "권한: 인터넷만 사용 (갤러리 저장은 MediaStore, 영상 선택은 시스템 사진 선택기)",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}

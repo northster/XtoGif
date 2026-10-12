@@ -1,0 +1,82 @@
+name: Build APK
+
+# Installable APK on every push, published as release v1.1.N (Obtainium tracks the latest release).
+on:
+  push:
+    branches: [ main ]
+    paths-ignore: [ '**.md' ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Unit tests (links, API parsers, GIF size search)
+        run: ./gradlew :core:test --stacktrace
+
+      - name: Signing
+        env:
+          XTOGIF_SIGNING_PASSWORD: ${{ secrets.XTOGIF_SIGNING_PASSWORD }}
+        run: |
+          # a release signed with anything else could never be updated, so none is published without the key
+          if [ -z "$XTOGIF_SIGNING_PASSWORD" ]; then
+            echo "::error::Add the XTOGIF_SIGNING_PASSWORD repository secret (Settings > Secrets and variables > Actions)"
+            exit 1
+          fi
+
+      - name: Build APK
+        env:
+          XS_BUILD_NUMBER: ${{ github.run_number }}
+          XS_SIGNING_PASSWORD: ${{ secrets.XTOGIF_SIGNING_PASSWORD }}
+        run: ./gradlew :app:assembleRelease --stacktrace
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: XSaver
+          path: app/build/outputs/apk/release/*.apk
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.1.${{ github.run_number }}
+          name: X 저장 1.1.${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          make_latest: true
+          body: |
+            ${{ github.event.head_commit.message }}
+
+            Built from ${{ github.sha }}
+          files: app/build/outputs/apk/release/*.apk
+
+      - name: Keep only the newest 3 releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release list --limit 100 --json tagName --jq '.[].tagName' \
+            | grep -E '^v1\.1\.[0-9]+$' | sort -V -r | tail -n +4 \
+            | xargs -r -I{} gh release delete {} --yes --cleanup-tag
+
+      - name: Archive reports for failed job
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports
+          path: '*/build/reports'
+        if: ${{ failure() }}

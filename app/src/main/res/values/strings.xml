@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">X 저장</string>
+    <string name="share_download">X 미디어 저장</string>
+    <string name="share_convert">GIF로 변환</string>
+</resources>
