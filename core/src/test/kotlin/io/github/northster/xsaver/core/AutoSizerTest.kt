@@ -27,8 +27,10 @@ class AutoSizerTest {
         val l = AutoSizer(src, 5_000_000, Dither.BAYER, 0.0, 8.0, false).ladder
         assertTrue(l.size > 20)
         for (i in 1 until l.size) assertTrue(GifSizeModel.predict(src, l[i]) < GifSizeModel.predict(src, l[i - 1]))
-        // frames go first (not below 12 with others free), then colours, then resolution
-        assertTrue(l.all { it.fps >= 12 })
+        // frames go first (to 12), then colours (to 64), then resolution; only then 6 fps and 32 colours
+        val usual = l.takeWhile { it.fps >= 12 && it.colors >= 64 }
+        assertTrue(usual.last().width == 160 && usual.last().fps == 12 && usual.last().colors == 64)
+        assertTrue(l.last().fps == 6 && l.last().colors == 32)
         val firstColorDrop = l.indexOfFirst { it.colors < 256 }
         val firstWidthDrop = l.indexOfFirst { it.width < 1080 }
         assertTrue(l.take(firstColorDrop).last().fps == 12)
@@ -37,9 +39,11 @@ class AutoSizerTest {
     }
 
     @Test fun lockedKnobsStay() {
+        // resolution locked: frames to 12, colours to 64, then past the floors to 6 fps and 32 colours
         val l = GifLadder(src, Dither.BAYER, 0.0, 8.0, locks = mapOf(Knob.WIDTH to 640)).steps
         assertTrue(l.all { it.width == 640 })
-        assertTrue(l.last().fps == 12 && l.last().colors == 64)
+        assertTrue(l.any { it.fps == 12 && it.colors == 64 })
+        assertTrue(l.last().fps == 6 && l.last().colors == 32)
         val c = GifLadder(src, Dither.BAYER, 0.0, 8.0, locks = mapOf(Knob.COLORS to 32)).steps
         assertTrue(c.all { it.colors == 32 })
         assertTrue(c.first().width == 1080 && c.last().width == 160)
@@ -69,7 +73,7 @@ class AutoSizerTest {
         val sizer = AutoSizer(src, 300_000, Dither.BAYER, 0.0, 8.0, allowTrim = true)
         val out = assertIs<AutoSizer.Outcome.Fits>(sizer.run { fakeSize(it, 3.0) })
         assertTrue(out.attempt.params.durationSec < 8.0)
-        assertTrue(out.attempt.params.width >= 240 && out.attempt.params.fps >= 12)
+        assertTrue(out.attempt.params.width >= 240)
         println("trim -> ${out.attempt.params.describe(src)}")
         val noTrim = AutoSizer(src, 1_000, Dither.BAYER, 0.0, 8.0, allowTrim = false).run { fakeSize(it, 3.0) }
         assertIs<AutoSizer.Outcome.TooBig>(noTrim)

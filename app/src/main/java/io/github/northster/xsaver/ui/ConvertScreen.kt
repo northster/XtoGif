@@ -178,7 +178,7 @@ fun ConvertScreen(vm: MainViewModel) {
                 Badge(
                     "원본 크기 GIF (100%) ${if (ui.estimateMeasured) "≈" else "약"} ${Bytes.format(full)}" +
                         (ui.fullLabel?.let { " · $it" } ?: "") +
-                        (ui.sliderMaxBytes?.let { max -> if (max < full) " · 목표 최대 ${Bytes.format(max)}" else "" } ?: ""),
+                        (ui.sliderMaxBytes?.let { max -> if (max < full) " · 슬라이더 최대 ${Bytes.format(max)}" else "" } ?: ""),
                     Modifier.align(Alignment.BottomStart).padding(8.dp),
                 )
             }
@@ -525,9 +525,9 @@ private fun Details(ui: ConvertUi, vm: MainViewModel) {
             enabled = enabled,
         )
         Text(
-            "이름을 누르면 잠금(굵은 강조색), 잠긴 값은 손으로만 바뀝니다. 목표 용량 슬라이더의 끝은 잠금 상태에서 낼 수 있는 최대 용량입니다. 목표 용량이 잠겨 있으면 잠기지 않은 항목이 " +
-                "프레임(최저 12fps) → 색상(최저 64색) → 해상도 순으로 줄어 목표에 맞춰지고, 한 항목만 남으면 프레임은 6fps, 색상은 " +
-                "32색까지 내려갑니다. 해상도·프레임·색상 중 둘을 잠그면 목표 용량 잠금이 풀리고, 그때는 정한 값 그대로 변환합니다.",
+            "이름을 누르면 잠금(굵은 강조색), 잠긴 값은 손으로만 바뀝니다. 목표 용량이 잠겨 있으면 잠기지 않은 항목이 " +
+                "프레임(최저 12fps) → 색상(최저 64색) → 해상도 순으로 줄어 목표에 맞춰집니다. 그래도 못 맞추면 프레임은 6fps, 색상은 " +
+                "32색까지 더 내려갑니다. 해상도·프레임·색상 중 둘을 잠그면 목표 용량 잠금이 풀리고, 그때는 정한 값 그대로 변환합니다.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

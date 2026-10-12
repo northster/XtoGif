@@ -10,9 +10,10 @@ enum class Knob { FPS, COLORS, WIDTH }
  * The settings, best first, that the automatic mode steps down through. Order of sacrifice: frame rate first, then
  * colours, then resolution. Settings in [locks] keep their value and only the others move.
  *
- * Floors: with two or three settings free, the frame rate stops at [AUTO_MIN_FPS] and the colours at
- * [AUTO_MIN_COLORS]; a setting left alone to fit the size may go down to the slider's minimum ([MIN_FPS], 32 colours).
- * Every step is smaller than the one before, so the list can be binary searched.
+ * Floors: the frame rate first stops at [AUTO_MIN_FPS] and the colours at [AUTO_MIN_COLORS]. Only when everything
+ * free is at its floor (resolution at its smallest, if free) and the size still doesn't fit, they go further, down to
+ * the sliders' minimum: [MIN_FPS], then 32 colours. Every step is smaller than the one before, so the list can be
+ * binary searched.
  */
 class GifLadder(
     private val src: SourceInfo,
@@ -45,13 +46,18 @@ class GifLadder(
         fpsValues = (listOf(fpsTop) + FPS).filter { it in min(MIN_FPS, fpsTop)..fpsTop }.distinct()
     }
 
-    private fun stepsOf(k: Knob): List<Int> {
-        val alone = free == listOf(k)
-        return when (k) {
-            Knob.FPS -> fpsValues.filter { alone || it >= AUTO_MIN_FPS }.ifEmpty { fpsValues.take(1) }
-            Knob.COLORS -> COLORS.filter { alone || it >= AUTO_MIN_COLORS }
-            Knob.WIDTH -> widths
-        }
+    /** The usual steps of a setting, down to its floor. */
+    private fun stepsOf(k: Knob): List<Int> = when (k) {
+        Knob.FPS -> fpsValues.filter { it >= AUTO_MIN_FPS }.ifEmpty { fpsValues.take(1) }
+        Knob.COLORS -> COLORS.filter { it >= AUTO_MIN_COLORS }
+        Knob.WIDTH -> widths
+    }
+
+    /** Below the floor, for when nothing else is left. */
+    private fun beyondFloor(k: Knob): List<Int> = when (k) {
+        Knob.FPS -> fpsValues.filter { it < stepsOf(Knob.FPS).last() }
+        Knob.COLORS -> COLORS.filter { it < AUTO_MIN_COLORS }
+        Knob.WIDTH -> emptyList()
     }
 
     val steps: List<GifParams> by lazy {
@@ -64,6 +70,12 @@ class GifLadder(
                 out.add(make(value))
             }
         }
+        for (k in free) {
+            for (v in beyondFloor(k)) {
+                value[k] = v
+                out.add(make(value))
+            }
+        }
         out
     }
 
@@ -71,9 +83,9 @@ class GifLadder(
         GifParams(v.getValue(Knob.WIDTH), v.getValue(Knob.FPS), v.getValue(Knob.COLORS), dither, startSec, durationSec)
 
     companion object {
-        /** Lowest frame rate on the slider, and for the frame rate when it is the only setting left to fit the size. */
+        /** Lowest frame rate on the slider, and what the automatic steps reach when nothing else is left. */
         const val MIN_FPS = 6
-        /** Lowest frame rate the automatic mode picks while other settings can still give. */
+        /** Where the automatic frame rate stops while other settings can still give. */
         const val AUTO_MIN_FPS = 12
         const val AUTO_MIN_COLORS = 64
         val FPS = listOf(30, 25, 24, 20, 15, 12, 10, 8, 6)
