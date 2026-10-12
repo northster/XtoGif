@@ -1,81 +1,19 @@
 # XtoGIF
 
-X(트위터) 게시물의 사진·영상·GIF를 갤러리에 저장하고, 영상을 목표 용량에 맞춘 진짜 GIF로 바꾸는 개인용 안드로이드 앱.
-갤럭시 Z 폴드(커버/내부 화면)에 맞춤.
+X(트위터) 게시물의 사진·영상·GIF를 갤러리에 저장하고, 영상을 원하는 용량에 맞춘 GIF로 바꿔 주는 안드로이드 앱.
+
+- X 앱에서 게시물 **공유 → XtoGIF 저장**: 사진은 원본 화질, 영상은 최고 화질로 갤러리 `XSaver` 앨범에 저장
+- **GIF** 스위치를 켜고 저장하면 영상·GIF를 진짜 GIF로 변환: 목표 용량을 고르면 해상도·프레임·색상이 자동으로 맞춰짐
+- 갤러리 영상도 공유 → **XtoGIF 변환**으로 GIF로 만들 수 있음
 
 ## 설치
-[Releases](https://github.com/northster/XtoGif/releases/latest)의 `XSaver-release.apk`.
-push할 때마다 자동으로 빌드해 릴리스 `v1.1.N`으로 올린다(최근 3개만 남김). `signing/xtogif.p12`(이 앱 전용 키)로 서명해서 새 버전을 덮어 설치할 수 있다. 키는 강한 비밀번호로 잠겨 있고, 비밀번호는 저장소 Secret `XTOGIF_SIGNING_PASSWORD`에만 있다.
+- [최신 APK](https://github.com/northster/XtoGif/releases/latest) (`XSaver-release.apk`)
+- 자동 업데이트: [Obtainium](https://github.com/ImranR98/Obtainium)에 `https://github.com/northster/XtoGif` 추가
+- Android 10 이상, 64비트 ARM 폰
 
-### Obtainium으로 자동 업데이트
-앱 추가 → URL `https://github.com/northster/XtoGif` → 추가. 다른 설정은 필요 없다.
-
-## 사용법
-- X 앱에서 게시물 공유 → **XtoGIF 저장**. 또는 앱에서 링크를 붙여넣기.
-- 썸네일·해상도·용량 목록이 나오고 전부 선택된 상태. 필요 없는 것만 체크 해제 → **저장**.
-- 영상/GIF가 선택돼 있으면 저장 버튼 왼쪽에 **GIF** 스위치가 나온다. 켜고 누르면 영상/GIF마다 GIF 변환 화면이 차례로 열리고(사진은 그동안 바로 저장), 끄면 MP4로 저장한다. GIF가 있는 게시물은 처음부터 켜져 있다(설정에서 바꿀 수 있음).
-- GIF 변환 화면: 위에는 그림, 아래에는 목표 용량 · 예상 용량 · **변환 및 저장**. 아래 부분을 위로 끌어올리면 세부 설정(용량 프리셋, 구간, 자동/수동, 디더링, 구간 자르기 허용).
-- 첫 화면의 **갤러리 영상으로 GIF 만들기**, 또는 갤러리에서 영상 공유 → **XtoGIF 변환**으로도 열린다.
-- 인용된 게시물에 미디어가 있으면 "인용된 게시물의 미디어도 받기" 스위치가 나온다(기본값은 설정에서).
-- 비공개 계정, 로그인이 필요한 게시물, 삭제된 게시물은 "다운로드 불가"와 이유만 표시한다.
-
-## 저장
-- MediaStore로 `사진/XSaver`(Pictures/XSaver)에 저장 → 갤러리에 곧바로 **XSaver** 앨범으로 보인다. 사진·영상·GIF 모두 같은 앨범.
-- 파일 이름: `작성자아이디_게시물ID_순번` (예: `nasa_1789012345678901234_2.jpg`). 인용 게시물의 미디어는 인용된 게시물의 작성자/ID로.
-- 사진은 `name=orig`(원본), 영상은 mp4 중 비트레이트가 가장 높은 것.
-- X의 GIF는 실제로는 소리 없는 mp4다. **GIF**를 켜면 진짜 .gif로 변환해 저장하고, 끄면 mp4로 저장한다.
-- X가 주는 mp4(X 자체 포장 방식)는 삼성 갤러리가 재생하지 못해서, 저장 전에 FFmpeg로 화질 손실 없이 표준 MP4로 다시 포장한다.
-- 변환한 GIF는 `같은이름.gif`로 저장.
-
-## 권한
-인터넷 하나뿐. Android 10+ 에서는 앱이 만드는 파일을 MediaStore에 넣을 때 저장소 권한이 필요 없고, 갤러리 영상은 시스템 사진 선택기로 고르므로 미디어 권한도 없다.
-
-## 미디어 정보를 가져오는 방법과 순서
-앞의 것이 실패하면 다음으로 넘어간다(설정에서 하나씩 끌 수 있음).
-
-| 순서 | 방법 | 장점 | 단점 / 안정성 |
-|---|---|---|---|
-| 1 | **X 임베드 엔드포인트** `cdn.syndication.twimg.com/tweet-result` | X 공식 서버(공개 임베드·react-tweet이 쓰는 것). 빠르고 중간 업체가 없음(무엇을 받는지 제3자가 모름). 모든 영상 화질과 인용 게시물 포함 | 문서화되지 않음. 2023년에 토큰 요구가 생긴 것처럼 예고 없이 바뀔 수 있음. 민감한 미디어로 표시된 게시물은 "TweetTombstone"으로 거부 |
-| 2 | **fxtwitter** `api.fxtwitter.com` | 가장 자세하고 활발히 유지보수됨. 민감한 게시물, 인용, 영상 variants, 비공개(401)/삭제(404) 구분 | 커뮤니티 운영 서버. X가 API를 바꿀 때 잠깐 멈춘 적이 있음 |
-| 3 | **vxtwitter** `api.vxtwitter.com` | fxtwitter와 같은 역할을 다른 운영자가 함 → 한쪽 장애 대비 | 정보가 조금 덜 자세함, 과거 장애가 더 잦았음 |
-| 4 | **yt-dlp** (youtubedl-android) | X가 뭔가 바꿔도 yt-dlp는 보통 며칠 안에 고쳐지고, 앱을 다시 빌드하지 않고 **설정 › yt-dlp 업데이트**로 반영 가능 | 무겁다(Python 포함, APK +30MB 정도, 첫 실행 시 몇 초 준비). X 추출기는 **영상/GIF만** 지원(사진 불가), 로그인 없이 막히는 경우도 많음 → 마지막 수단 |
-
-fxtwitter가 "비공개 계정"이라고 확인해 주면 그 뒤 방법은 건너뛴다(어차피 못 읽음).
-
-## GIF 변환 엔진: FFmpeg vs gifski
-
-| | FFmpeg (palettegen + paletteuse) | gifski |
-|---|---|---|
-| 품질 | 좋음. 클립 전체에 최적화된 256색 팔레트 + 디더링 | 가장 좋음. 프레임마다 수천 색을 시간축 디더링으로 표현 |
-| 용량 효율 | **좋음.** `diff_mode=rectangle`로 바뀐 부분만 다시 그림, bayer 디더링은 압축이 잘 됨, 색상 수를 직접 줄일 수 있음 | 같은 해상도에서 보통 더 큼(품질 우선 설계). `--lossy`로 줄일 수는 있음 |
-| 용량 조절 수단 | 해상도·fps·색상 수·디더링·구간 모두 한 명령으로 | 품질/해상도/fps 정도. 색상 수 직접 지정 불가 |
-| 안드로이드 적용 | **쉬움.** 유지보수되는 FFmpegKit 빌드가 Maven Central에 있음. 영상 디코딩까지 한 번에 | 어려움. Rust 라이브러리를 직접 NDK로 크로스 컴파일 + JNI 작성. 영상 디코딩은 따로(MediaCodec/FFmpeg) 필요. 라이선스 AGPL |
-
-**선택: FFmpeg.** 목표가 "용량 중심"이고 용량을 세밀하게 조절하는 수단이 FFmpeg 쪽에 다 있으며, 디코딩부터 GIF 인코딩까지 라이브러리 하나로 끝난다.
-원래의 FFmpegKit(arthenica)은 2025년에 은퇴하고 바이너리가 내려갔으므로, 지금 유지보수되는 포크
-`com.antonkarpenko:ffmpeg-kit-min` 2.2.3(FFmpeg 8.1.2, 2026-10 배포, 16KB 페이지 정렬, LGPL)을 라이브러리로 넣었다.
-`min` 변형에도 H.264/HEVC 디코더, scale/fps/palettegen/paletteuse, GIF 인코더가 모두 들어 있다.
-
-변환은 두 단계: ① `palettegen=stats_mode=diff`로 팔레트 PNG ② `paletteuse=diff_mode=rectangle`로 GIF.
-한 명령에 split으로 넣으면 모든 프레임을 메모리에 쌓기 때문에 나눴다.
-
-## 목표 용량 맞추기
-- **자동 모드**: [sticker-convert](https://github.com/laggykiller/sticker-convert)(GPL-2.0)의 방식, 즉 설정을 "좋은 것 → 작은 것" 단계로 늘어놓고
-  실제로 변환해 보며 이진 탐색해서 한도 안에서 가장 좋은 것을 고르는 방식을 참고했다. 고친 점:
-  - 한 손잡이를 균등하게 내리는 대신, 해상도×fps×색상 수 조합마다 화질 점수를 매기고 "더 좋은 것보다 항상 작은" 조합만 남긴다(파레토 경계).
-    그래서 30→15fps로 프레임을 먼저 줄이고, 그다음 해상도와 색상 수를 함께 내린다.
-  - 다음 시도 지점은 매 변환마다 다시 보정하는 용량 예측 모델로 고르고(보통 2~5회), 두 번 연속 빗나가면 반으로 나눈다.
-  - "구간 자르기 허용"을 켜면 240px · 10fps · 64색 아래로는 내리지 않고 대신 뒤를 자른다.
-- **수동 모드**: 해상도·fps·색상 수 슬라이더. 예상 용량은 움직이는 즉시 모델로 대략 보여 주고, 손을 떼면 구간 가운데 2초를 실제로 변환해 정확하게 다시 계산한다.
-- **미리보기**: 수동 모드의 "미리보기(3초)", 그리고 변환 결과는 갤러리에 저장하기 전에 먼저 보여 준다. 원본 영상은 고른 구간을 반복 재생.
-- MB는 1,000,000바이트 기준이라, MiB로 세는 한도(예: 디스코드 10MB)에도 여유 있게 들어간다.
-
-## 구조
-- `core/` 순수 Kotlin: 링크 파싱, 4가지 응답 파서, 임베드 토큰(JS `toString(36)` 이식), GIF 단계 탐색. JVM 단위 테스트(`./gradlew :core:test`).
-- `app/` Compose UI, 다운로드/MediaStore 저장, FFmpegKit 래퍼, yt-dlp.
-- 폴드: 너비 600dp 이상(내부 화면)에서는 2단 화면, 커버 화면에서는 1단. 접고 펼 때 액티비티를 다시 만들지 않는다.
+## 개인정보
+인터넷 권한만 씁니다. 게시물 정보는 X 서버와 fxtwitter·vxtwitter에서 가져오고, 따로 수집하거나 보내는 정보는 없습니다.
 
 ## 라이선스
-XtoGIF는 [GPL-3.0](LICENSE)입니다. 들어 있는 라이브러리: FFmpegKit min과 FFmpeg(LGPL), youtubedl-android(GPL-3.0, yt-dlp는 Unlicense, Python은 PSF),
-Coil·OkHttp·Kotlin·AndroidX(Apache-2.0). 전체 고지: 앱의 설정 › 오픈소스 고지, 또는 [open_source_licenses.txt](app/src/main/assets/open_source_licenses.txt).
-X Corp과 관계없고, 저장한 미디어의 권리는 올린 사람에게 있습니다.
+[GPL-3.0](LICENSE). 사용한 오픈소스(FFmpeg, yt-dlp 등)는 앱의 설정 › 오픈소스 고지 참고.
+X Corp과 관계없으며, 저장한 미디어의 권리는 올린 사람에게 있습니다.

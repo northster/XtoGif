@@ -61,9 +61,7 @@ jobs:
           target_commitish: ${{ github.sha }}
           make_latest: true
           body: |
-            ${{ github.event.head_commit.message }}
-
-            Built from ${{ github.sha }}
+            `XSaver-release.apk`를 받아 설치하거나, Obtainium에 이 저장소를 추가하면 자동 업데이트됩니다.
           files: app/build/outputs/apk/release/*.apk
 
       - name: Keep only the newest 3 releases
