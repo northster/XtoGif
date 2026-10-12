@@ -75,5 +75,7 @@ fxtwitter가 "비공개 계정"이라고 확인해 주면 그 뒤 방법은 건�
 - `app/` Compose UI, 다운로드/MediaStore 저장, FFmpegKit 래퍼, yt-dlp.
 - 폴드: 너비 600dp 이상(내부 화면)에서는 2단 화면, 커버 화면에서는 1단. 접고 펼 때 액티비티를 다시 만들지 않는다.
 
-## 라이선스 메모
-개인용, 배포하지 않음. FFmpegKit min(LGPL-3.0), youtubedl-android(GPL-3.0), yt-dlp(Unlicense), Coil/OkHttp(Apache-2.0).
+## 라이선스
+XtoGIF는 [GPL-3.0](LICENSE)입니다. 들어 있는 라이브러리: FFmpegKit min과 FFmpeg(LGPL), youtubedl-android(GPL-3.0, yt-dlp는 Unlicense, Python은 PSF),
+Coil·OkHttp·Kotlin·AndroidX(Apache-2.0). 전체 고지: 앱의 설정 › 오픈소스 고지, 또는 [open_source_licenses.txt](app/src/main/assets/open_source_licenses.txt).
+X Corp과 관계없고, 저장한 미디어의 권리는 올린 사람에게 있습니다.

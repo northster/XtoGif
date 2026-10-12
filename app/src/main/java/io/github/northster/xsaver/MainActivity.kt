@@ -12,6 +12,7 @@ import androidx.activity.viewModels
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.northster.xsaver.ui.ConvertScreen
+import io.github.northster.xsaver.ui.LicensesScreen
 import io.github.northster.xsaver.ui.MainScreen
 import io.github.northster.xsaver.ui.MainViewModel
 import io.github.northster.xsaver.ui.Screen
@@ -33,6 +34,7 @@ class MainActivity : ComponentActivity() {
                     Screen.MAIN -> MainScreen(vm)
                     Screen.CONVERT -> ConvertScreen(vm)
                     Screen.SETTINGS -> SettingsScreen(vm)
+                    Screen.LICENSES -> LicensesScreen(vm)
                 }
             }
         }

@@ -1,0 +1,55 @@
+XtoGIF
+Copyright (C) 2026 northster
+https://github.com/northster/XtoGif
+
+This program is free software: you can redistribute it and/or modify it under the terms of the
+GNU General Public License as published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version. It is distributed WITHOUT ANY WARRANTY.
+Full text: https://www.gnu.org/licenses/gpl-3.0.html (also LICENSE in the source repository).
+
+Source code: https://github.com/northster/XtoGif
+
+==========================================================================================
+Libraries included in the app
+==========================================================================================
+
+FFmpegKit (com.antonkarpenko:ffmpeg-kit-min) - LGPL-3.0
+  https://github.com/sk3llo/ffmpeg_kit_flutter_android
+  Fork of FFmpegKit by Taner Sener (arthenica), https://github.com/arthenica/ffmpeg-kit
+  Contains FFmpeg 8.1 (https://ffmpeg.org), LGPL-2.1-or-later, as shared libraries
+  (libavcodec, libavformat, libavfilter, libavutil, libswscale, libswresample, libavdevice).
+  The FFmpeg source code for these builds is available from the projects above and https://ffmpeg.org.
+  https://www.gnu.org/licenses/lgpl-3.0.html, https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html
+
+youtubedl-android (io.github.junkfood02.youtubedl-android) - GPL-3.0
+  https://github.com/JunkFood02/youtubedl-android (fork of https://github.com/yausername/youtubedl-android)
+  Bundles:
+  - yt-dlp, https://github.com/yt-dlp/yt-dlp - The Unlicense (public domain)
+  - Python, https://www.python.org - Python Software Foundation License
+
+Coil (io.coil-kt.coil3) - Apache-2.0
+  https://github.com/coil-kt/coil
+
+OkHttp, Okio (com.squareup) - Apache-2.0
+  https://github.com/square/okhttp, https://github.com/square/okio
+
+Kotlin standard library, kotlinx.coroutines, kotlinx.serialization (JetBrains) - Apache-2.0
+  https://github.com/JetBrains/kotlin, https://github.com/Kotlin/kotlinx.coroutines,
+  https://github.com/Kotlin/kotlinx.serialization
+
+AndroidX, Jetpack Compose, Material 3, Material Icons (Google) - Apache-2.0
+  https://developer.android.com/jetpack/androidx
+
+Apache License 2.0: https://www.apache.org/licenses/LICENSE-2.0
+
+==========================================================================================
+Ideas and services (no code included)
+==========================================================================================
+
+sticker-convert by laggykiller - GPL-2.0, https://github.com/laggykiller/sticker-convert
+  The idea of fitting a file size limit by binary searching a ladder of settings with real encodes.
+
+Post information comes from X's embed endpoint (cdn.syndication.twimg.com),
+FixTweet / fxtwitter (https://github.com/FixTweet/FxTwitter) and
+BetterTwitFix / vxtwitter (https://github.com/dylanpdx/BetterTwitFix).
+XtoGIF is not affiliated with X Corp. Media you save belongs to whoever posted it.

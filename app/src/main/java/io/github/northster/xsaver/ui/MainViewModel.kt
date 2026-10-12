@@ -41,7 +41,7 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
-enum class Screen { MAIN, CONVERT, SETTINGS }
+enum class Screen { MAIN, CONVERT, SETTINGS, LICENSES }
 
 enum class EntryState { IDLE, DOWNLOADING, SAVED, FAILED }
 
