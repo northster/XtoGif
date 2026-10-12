@@ -83,6 +83,22 @@ object GifEngine {
         if (!out.exists() || out.length() == 0L) throw IOException("다시 포장한 영상이 비어 있습니다")
     }
 
+    /**
+     * One frame at [atSec] with the size, colours and dithering of [p], as a PNG: what the GIF will roughly look like.
+     * Its palette comes from that frame alone, so it is a little kinder than the real one made for the whole clip.
+     */
+    suspend fun still(input: File, p: GifParams, atSec: Double, out: File) {
+        run(
+            listOf(
+                "-y", "-ss", String.format(java.util.Locale.US, "%.3f", atSec), "-i", input.absolutePath, "-frames:v", "1",
+                "-vf", "scale=${p.width}:-2:flags=lanczos,split[a][b];[a]palettegen=max_colors=${p.colors}:reserve_transparent=0[p];" +
+                    "[b][p]paletteuse=dither=${p.dither.filter}",
+                "-update", "1", "-f", "image2", out.absolutePath,
+            ),
+        ) { }
+        if (!out.exists() || out.length() == 0L) throw IOException("미리보기 이미지가 비어 있습니다")
+    }
+
     /** Makes [out] and returns its size. [onProgress] goes 0..1 over both passes. */
     suspend fun encode(input: File, p: GifParams, out: File, onProgress: (Float) -> Unit = {}): Long {
         val palette = File(out.parentFile, out.nameWithoutExtension + "_palette.png")

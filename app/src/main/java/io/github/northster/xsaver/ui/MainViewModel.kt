@@ -123,6 +123,11 @@ data class ConvertUi(
     val fullBytes: Long? = null,
     val fullLabel: String? = null,
     val sliderCapBytes: Long = 20 * Bytes.MB,
+    /** Settings behind [estimate]: what the automatic mode would pick, or the manual ones. */
+    val estimateParams: GifParams? = null,
+    /** One frame rendered with [stillParams], shown in place of the video before converting. */
+    val still: File? = null,
+    val stillParams: GifParams? = null,
     /** The target was typed or slid; before that it follows the slider's default position. */
     val targetTouched: Boolean = false,
     val entryKey: String? = null,
@@ -518,7 +523,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val main = estimateFor(info, st, k)
         _convert.update {
             it.copy(
-                estimate = main?.second, estimateLabel = main?.third, estimateMeasured = measured,
+                estimate = main?.second, estimateLabel = main?.third, estimateMeasured = measured, estimateParams = main?.first,
                 fullBytes = fullBytes, fullLabel = full.describe(info),
                 targetMb = if (it.targetTouched) it.targetMb else st.targetMb,
             )
@@ -551,19 +556,42 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             delay(600)
             _convert.update { it.copy(estimating = true) }
             try {
-                val params = if (s.mode == ConvertMode.MANUAL) s.manualParams() else fullParams(info, s)
+                // the 100% settings are sampled at no more than 480 px wide (much faster; the model scales it up)
+                val params = if (s.mode == ConvertMode.MANUAL) s.manualParams()
+                else fullParams(info, s).let { full -> full.copy(width = min(full.width, 480).let { w -> w - w % 2 }) }
                 val sampleLen = min(2.0, params.durationSec)
                 val sample = params.copy(startSec = params.startSec + (params.durationSec - sampleLen) / 2, durationSec = sampleLen)
                 val bytes = GifEngine.encode(source, sample, File(workDir, "sample.gif"))
                 calibratedK = GifSizeModel.calibrate(info, sample, bytes)
                 applyEstimates(info, _convert.value, calibratedK, measured = true)
                 _convert.update { it.copy(estimating = false) }
+                renderStill(info, source)
             } catch (c: CancellationException) {
                 _convert.update { it.copy(estimating = false) }
                 throw c
             } catch (_: Exception) {
                 _convert.update { it.copy(estimating = false) }
             }
+        }
+    }
+
+    private var stillCounter = 0
+
+    /** A frame from the middle of the range with the settings the estimate is about. */
+    private suspend fun renderStill(info: SourceInfo, source: File) {
+        val p = _convert.value.estimateParams ?: return
+        if (_convert.value.stillParams == p) return
+        val out = File(workDir, "still_${++stillCounter}.png")
+        try {
+            GifEngine.still(source, p, p.startSec + p.durationSec / 2, out)
+            val old = _convert.value.still
+            _convert.update { it.copy(still = out, stillParams = p) }
+            if (old != out) old?.delete()
+        } catch (c: CancellationException) {
+            out.delete()
+            throw c
+        } catch (_: Exception) {
+            out.delete()
         }
     }
 

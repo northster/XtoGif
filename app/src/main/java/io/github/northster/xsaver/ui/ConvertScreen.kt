@@ -62,6 +62,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
@@ -189,7 +190,36 @@ private fun Picture(ui: ConvertUi) {
                 Badge("GIF ${Bytes.format(result.bytes)} · $verdict")
             }
         }
-        else -> SourcePlayer(ui)
+        else -> {
+            // before converting: one frame with the settings in view (tap: the source video instead)
+            var showVideo by remember { mutableStateOf(false) }
+            val still = ui.still
+            val info = ui.info
+            if (still != null && !showVideo) {
+                val context = LocalContext.current
+                val request = remember(still) {
+                    ImageRequest.Builder(context).data(still)
+                        .memoryCachePolicy(CachePolicy.DISABLED).diskCachePolicy(CachePolicy.DISABLED).build()
+                }
+                AsyncImage(
+                    model = request,
+                    contentDescription = "미리보기",
+                    contentScale = ContentScale.Fit,
+                    filterQuality = FilterQuality.None, // real pixels: dithering and blockiness as they will be
+                    modifier = Modifier.fillMaxSize().clickable { showVideo = true },
+                )
+                Box(Modifier.fillMaxSize().padding(8.dp), contentAlignment = Alignment.TopStart) {
+                    Badge("미리보기 한 장 · ${ui.stillParams?.let { p -> info?.let { "${p.width}×${p.height(it)} · ${p.colors}색" } }.orEmpty()} · 누르면 원본 재생")
+                }
+            } else {
+                Box(Modifier.fillMaxSize().clickable(enabled = still != null) { showVideo = false }) {
+                    SourcePlayer(ui)
+                    if (still != null) {
+                        Box(Modifier.fillMaxSize().padding(8.dp), contentAlignment = Alignment.TopStart) { Badge("원본 · 누르면 미리보기") }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -258,6 +288,14 @@ private fun SimpleBar(ui: ConvertUi, vm: MainViewModel, modifier: Modifier) {
                 modifier = Modifier.width(52.dp).padding(start = 8.dp),
             )
         }
+        // the settings this target means
+        Text(
+            ui.estimateLabel?.let { "→ $it" } ?: " ",
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.primary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             OutlinedTextField(
                 value = ui.targetMb,
@@ -282,7 +320,7 @@ private fun SimpleBar(ui: ConvertUi, vm: MainViewModel, modifier: Modifier) {
                     fontWeight = FontWeight.Bold,
                 )
                 Text(
-                    if (ui.estimating) "샘플을 변환해 확인 중…" else ui.estimateLabel.orEmpty(),
+                    if (ui.estimating) "샘플을 변환해 확인 중…" else if (ui.estimateMeasured) "샘플로 확인한 값" else "대략값",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2,
